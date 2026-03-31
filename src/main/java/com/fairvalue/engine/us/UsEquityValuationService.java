@@ -1,5 +1,7 @@
 package com.fairvalue.engine.us;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fairvalue.engine.api.dto.us.UsDataQualityResponse;
 import com.fairvalue.engine.api.dto.us.UsEquityProfileResponse;
 import com.fairvalue.engine.api.dto.us.UsExplanationBlock;
@@ -15,6 +17,10 @@ import com.fairvalue.engine.api.dto.us.UsValuationSummaryResponse;
 import com.fairvalue.engine.domain.Market;
 import com.fairvalue.engine.domain.StockFundamentals;
 import com.fairvalue.engine.domain.StockSnapshot;
+import com.fairvalue.engine.repository.FinancialDerivedMetricsRepository;
+import com.fairvalue.engine.repository.FinancialQualityScoresRepository;
+import com.fairvalue.engine.repository.SourceDocumentRepository;
+import com.fairvalue.engine.repository.SourceRegistryRepository;
 import com.fairvalue.engine.service.MarketDataService;
 import com.fairvalue.engine.service.ValuationService;
 import com.fairvalue.engine.valuation.ModelValuation;
@@ -36,17 +42,35 @@ public class UsEquityValuationService {
     private final ValuationService valuationService;
     private final UsSecClient usSecClient;
     private final UsStooqClient usStooqClient;
+    private final UsSecurityMasterService usSecurityMasterService;
+    private final FinancialDerivedMetricsRepository financialDerivedMetricsRepository;
+    private final FinancialQualityScoresRepository financialQualityScoresRepository;
+    private final SourceRegistryRepository sourceRegistryRepository;
+    private final SourceDocumentRepository sourceDocumentRepository;
+    private final ObjectMapper objectMapper;
 
     public UsEquityValuationService(
             MarketDataService marketDataService,
             ValuationService valuationService,
             UsSecClient usSecClient,
-            UsStooqClient usStooqClient
+            UsStooqClient usStooqClient,
+            UsSecurityMasterService usSecurityMasterService,
+            FinancialDerivedMetricsRepository financialDerivedMetricsRepository,
+            FinancialQualityScoresRepository financialQualityScoresRepository,
+            SourceRegistryRepository sourceRegistryRepository,
+            SourceDocumentRepository sourceDocumentRepository,
+            ObjectMapper objectMapper
     ) {
         this.marketDataService = marketDataService;
         this.valuationService = valuationService;
         this.usSecClient = usSecClient;
         this.usStooqClient = usStooqClient;
+        this.usSecurityMasterService = usSecurityMasterService;
+        this.financialDerivedMetricsRepository = financialDerivedMetricsRepository;
+        this.financialQualityScoresRepository = financialQualityScoresRepository;
+        this.sourceRegistryRepository = sourceRegistryRepository;
+        this.sourceDocumentRepository = sourceDocumentRepository;
+        this.objectMapper = objectMapper;
     }
 
     public UsEquityProfileResponse profile(String ticker) {
@@ -79,6 +103,7 @@ public class UsEquityValuationService {
         UsSecClient.UsSecProfile profile = usProfile(ticker);
         StockFundamentals f = snapshot.fundamentals();
         ValuationResult valuation = valuationService.valuate(Market.US, ticker);
+        long securityId = resolveSecurityId(ticker);
 
         LocalDate latest10q = profile != null && profile.latest10qDate() != null
                 ? profile.latest10qDate()
@@ -125,7 +150,10 @@ public class UsEquityValuationService {
             warnings.add("confidence_below_preferred_threshold");
         }
 
-        String guidance = f.analystCoverage() > 0.65
+        boolean hasRecentCompanyIr = hasRecentCompanyIrGuidance(securityId);
+        String guidance = hasRecentCompanyIr
+                ? "company_ir_captured"
+                : f.analystCoverage() > 0.65
                 ? "captured"
                 : profile != null ? "filings_only" : "guidance-blind";
 
@@ -148,6 +176,46 @@ public class UsEquityValuationService {
         UsSecClient.UsSecProfile profile = usProfile(ticker);
         StockFundamentals f = snapshot.fundamentals();
         double dilutedShares = resolveDilutedShares(snapshot, profile);
+        long securityId = resolveSecurityId(ticker);
+        UsFinancialQualityScoreRecord latestScore = financialQualityScoresRepository.findLatestAvailableBySecurityId(securityId).orElse(null);
+        UsFinancialDerivedMetricRecord latestDerived = financialDerivedMetricsRepository.findLatestBySecurityId(securityId, 1)
+                .stream()
+                .findFirst()
+                .orElse(null);
+
+        if (latestScore != null) {
+            Map<String, Double> profitability = new LinkedHashMap<>();
+            profitability.put("revenue_growth", MathSupport.round(f.revenueGrowth()));
+            profitability.put("fcf_margin", latestDerived != null && latestDerived.fcfMargin() != null
+                    ? latestDerived.fcfMargin().doubleValue()
+                    : MathSupport.round(f.fcfMargin()));
+            profitability.put("roe", latestDerived != null && latestDerived.roe() != null
+                    ? latestDerived.roe().doubleValue()
+                    : MathSupport.round(f.roe()));
+            profitability.put("buyback_yield", MathSupport.round(f.buybackYield()));
+            profitability.put("dividend_yield", MathSupport.round(f.dividendYield()));
+
+            double altmanZ = latestDerived != null && latestDerived.altmanZScore() != null
+                    ? latestDerived.altmanZScore().doubleValue()
+                    : MathSupport.round(MathSupport.clamp(1.7 + safe(latestScore.balanceSheetScore()) * 2.3 + safe(latestScore.earningsQualityScore()) * 1.1, 1.2, 5.2));
+            double ownerEarnings = latestDerived != null && latestDerived.ownerEarningsEstimate() != null
+                    ? latestDerived.ownerEarningsEstimate().doubleValue()
+                    : MathSupport.round(estimateOwnerEarnings(snapshot, profile, dilutedShares));
+
+            return new UsFinancialQualityResponse(
+                    snapshot.symbol(),
+                    profitability,
+                    safe(latestScore.earningsQualityScore()),
+                    safe(latestScore.revenueQualityScore()),
+                    safe(latestScore.balanceSheetScore()),
+                    safe(latestScore.capitalEfficiencyScore()),
+                    safe(latestScore.capitalAllocationScore()),
+                    safe(latestScore.totalQualityScore()),
+                    parseStringList(latestScore.redFlagsJson()),
+                    altmanZ,
+                    ownerEarnings
+            );
+        }
 
         double earningsQuality = MathSupport.clamp(0.58 + f.fcfMargin() * 1.00 - f.sbcRatio() * 0.65 - f.earningsVolatility() * 0.40, 0.20, 0.95);
         double revenueQuality = MathSupport.clamp(0.52 + f.revenueGrowth() * 0.80 + f.analystCoverage() * 0.15, 0.20, 0.95);
@@ -605,6 +673,37 @@ public class UsEquityValuationService {
             return "Energy";
         }
         return "General";
+    }
+
+    private boolean hasRecentCompanyIrGuidance(long securityId) {
+        return sourceRegistryRepository.findIdBySourceName(UsSecurityIdentifierService.COMPANY_IR)
+                .map(sourceId -> sourceDocumentRepository.existsRecentBySecurityIdAndSourceIdAndDocumentTypes(
+                        securityId,
+                        sourceId,
+                        List.of("GUIDANCE", "EARNINGS_RELEASE", "INVESTOR_DAY", "IR_RELEASE"),
+                        LocalDate.now().minusDays(180)
+                ))
+                .orElse(false);
+    }
+
+    private long resolveSecurityId(String rawTicker) {
+        return usSecurityMasterService.resolveSecurityId(rawTicker)
+                .orElseThrow(() -> new IllegalStateException("Ticker " + rawTicker + " does not exist in security master."));
+    }
+
+    private List<String> parseStringList(String rawJson) {
+        if (rawJson == null || rawJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(rawJson, new TypeReference<List<String>>() { });
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
+    private double safe(java.math.BigDecimal value) {
+        return value == null ? 0.0 : value.doubleValue();
     }
 
     private double estimateDilutedShares(StockSnapshot snapshot) {

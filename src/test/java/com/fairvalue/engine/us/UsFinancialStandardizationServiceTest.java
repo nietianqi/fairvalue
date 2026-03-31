@@ -45,6 +45,9 @@ class UsFinancialStandardizationServiceTest {
         jdbcClient.sql("DELETE FROM fairvalue.financial_derived_metrics WHERE security_id = :securityId")
                 .param("securityId", aaplSecurityId)
                 .update();
+        jdbcClient.sql("DELETE FROM fairvalue.financial_quality_scores WHERE security_id = :securityId")
+                .param("securityId", aaplSecurityId)
+                .update();
         jdbcClient.sql("DELETE FROM fairvalue.source_document_facts_raw WHERE security_id = :securityId")
                 .param("securityId", aaplSecurityId)
                 .update();
@@ -73,6 +76,7 @@ class UsFinancialStandardizationServiceTest {
         assertThat(summary.rawFactCount()).isEqualTo(44);
         assertThat(summary.standardizedRowCount()).isEqualTo(5);
         assertThat(summary.derivedMetricRowCount()).isEqualTo(5);
+        assertThat(summary.financialQualityRowCount()).isEqualTo(5);
         assertThat(summary.fyCount()).isZero();
         assertThat(summary.quarterCount()).isEqualTo(4);
         assertThat(summary.ttmCount()).isEqualTo(1);
@@ -136,6 +140,16 @@ class UsFinancialStandardizationServiceTest {
                 .param("securityId", aaplSecurityId)
                 .query(BigDecimal.class)
                 .single();
+        BigDecimal totalQualityScore = jdbcClient.sql("""
+                        SELECT total_quality_score
+                        FROM fairvalue.financial_quality_scores
+                        WHERE security_id = :securityId
+                          AND period_type = 'TTM'
+                          AND period_end = DATE '2025-09-27'
+                        """)
+                .param("securityId", aaplSecurityId)
+                .query(BigDecimal.class)
+                .single();
 
         assertThat(storedCount).isEqualTo(5);
         assertThat(ttmRevenue).isEqualByComparingTo("460");
@@ -143,6 +157,7 @@ class UsFinancialStandardizationServiceTest {
         assertThat(latestQualityJson).contains("\"document_type\": \"10-Q\"");
         assertThat(derivedRoiC).isNotNull();
         assertThat(derivedBookValuePerShare).isEqualByComparingTo("2.300000");
+        assertThat(totalQualityScore).isNotNull();
     }
 
     @Test
@@ -213,6 +228,7 @@ class UsFinancialStandardizationServiceTest {
 
         assertThat(summary.standardizedRowCount()).isEqualTo(6);
         assertThat(summary.derivedMetricRowCount()).isEqualTo(6);
+        assertThat(summary.financialQualityRowCount()).isEqualTo(6);
         assertThat(summary.ttmCount()).isEqualTo(1);
         assertThat(q2Revenue).isEqualByComparingTo("110");
         assertThat(q3Revenue).isEqualByComparingTo("120");

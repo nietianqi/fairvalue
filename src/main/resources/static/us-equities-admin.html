@@ -269,6 +269,7 @@
                 <div class="button-row">
                     <button class="primary" id="overviewBtn">刷新概览</button>
                     <button class="secondary" id="secSyncBtn">SEC Sync</button>
+                    <button class="secondary" id="irSyncBtn">IR Sync</button>
                     <button class="warm" id="standardizeBtn">Standardize</button>
                     <button class="ghost" id="universeBtn">Universe Sync</button>
                 </div>
@@ -279,6 +280,10 @@
                 <div class="metric">
                     <span>Source Documents</span>
                     <strong id="docCount">-</strong>
+                </div>
+                <div class="metric">
+                    <span>Company IR Docs</span>
+                    <strong id="irDocCount">-</strong>
                 </div>
                 <div class="metric">
                     <span>Raw Facts</span>
@@ -292,12 +297,20 @@
                     <span>Derived Metrics</span>
                     <strong id="derivedCount">-</strong>
                 </div>
+                <div class="metric">
+                    <span>Quality Scores</span>
+                    <strong id="qualityCount">-</strong>
+                </div>
             </div>
 
             <div class="tables">
                 <div class="table-card">
                     <div class="table-head">Latest Documents</div>
                     <div id="documentsTable"></div>
+                </div>
+                <div class="table-card">
+                    <div class="table-head">Latest Company IR Documents</div>
+                    <div id="companyIrTable"></div>
                 </div>
                 <div class="table-card">
                     <div class="table-head">Latest Raw Facts</div>
@@ -311,6 +324,10 @@
                     <div class="table-head">Latest Financial Derived Metrics</div>
                     <div id="derivedTable"></div>
                 </div>
+                <div class="table-card">
+                    <div class="table-head">Latest Financial Quality Scores</div>
+                    <div id="qualityTable"></div>
+                </div>
             </div>
         </div>
 
@@ -320,8 +337,9 @@
             <div class="small-note">
                 建议顺序：
                 1. 先点 <strong>SEC Sync</strong>
-                2. 再点 <strong>Standardize</strong>
-                3. 最后点 <strong>刷新概览</strong>
+                2. 有需要时点 <strong>IR Sync</strong>
+                3. 再点 <strong>Standardize</strong>
+                4. 最后点 <strong>刷新概览</strong>
             </div>
         </div>
     </section>
@@ -332,13 +350,17 @@
     const statusBox = document.getElementById("statusBox");
     const responseBox = document.getElementById("responseBox");
     const docCount = document.getElementById("docCount");
+    const irDocCount = document.getElementById("irDocCount");
     const rawCount = document.getElementById("rawCount");
     const stdCount = document.getElementById("stdCount");
     const derivedCount = document.getElementById("derivedCount");
+    const qualityCount = document.getElementById("qualityCount");
     const documentsTable = document.getElementById("documentsTable");
+    const companyIrTable = document.getElementById("companyIrTable");
     const rawFactsTable = document.getElementById("rawFactsTable");
     const standardizedTable = document.getElementById("standardizedTable");
     const derivedTable = document.getElementById("derivedTable");
+    const qualityTable = document.getElementById("qualityTable");
     const buttons = Array.from(document.querySelectorAll("button"));
 
     function ticker() {
@@ -394,9 +416,11 @@
     async function refreshOverview() {
         const payload = await callApi(`/v1/us-equities-admin/${ticker()}/overview`);
         docCount.textContent = payload.source_document_count;
+        irDocCount.textContent = payload.company_ir_document_count;
         rawCount.textContent = payload.raw_fact_count;
         stdCount.textContent = payload.financial_standardized_count;
         derivedCount.textContent = payload.financial_derived_metric_count;
+        qualityCount.textContent = payload.financial_quality_score_count;
 
         renderTable(documentsTable, [
             { key: "document_type", label: "Type" },
@@ -404,6 +428,13 @@
             { key: "accession_no", label: "Accession" },
             { key: "parsed_status", label: "Status" }
         ], payload.latest_documents);
+
+        renderTable(companyIrTable, [
+            { key: "document_type", label: "Type" },
+            { key: "filing_date", label: "Date" },
+            { key: "document_title", label: "Title" },
+            { key: "document_url", label: "URL" }
+        ], payload.latest_company_ir_documents);
 
         renderTable(rawFactsTable, [
             { key: "document_type", label: "Doc" },
@@ -432,11 +463,24 @@
             { key: "fcf_margin", label: "FCF Margin" },
             { key: "book_value_per_share", label: "BVPS" }
         ], payload.latest_financial_derived_metrics);
+
+        renderTable(qualityTable, [
+            { key: "period_type", label: "Type" },
+            { key: "period_end", label: "Period End" },
+            { key: "earnings_quality_score", label: "Earnings" },
+            { key: "balance_sheet_score", label: "Balance Sheet" },
+            { key: "capital_efficiency_score", label: "Capital Efficiency" },
+            { key: "total_quality_score", label: "Total" }
+        ], payload.latest_financial_quality_scores);
     }
 
     document.getElementById("overviewBtn").addEventListener("click", refreshOverview);
     document.getElementById("secSyncBtn").addEventListener("click", async () => {
         await callApi(`/v1/us-equities-admin/${ticker()}/sec-sync`, { method: "POST" });
+        await refreshOverview();
+    });
+    document.getElementById("irSyncBtn").addEventListener("click", async () => {
+        await callApi(`/v1/us-equities-admin/${ticker()}/ir-sync`, { method: "POST" });
         await refreshOverview();
     });
     document.getElementById("standardizeBtn").addEventListener("click", async () => {

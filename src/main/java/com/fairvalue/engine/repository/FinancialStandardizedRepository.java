@@ -128,6 +128,50 @@ public class FinancialStandardizedRepository {
         return count == null ? 0L : count;
     }
 
+    public List<UsFinancialStandardizedRecord> findBySecurityId(long securityId) {
+        return jdbcClient.sql("""
+                        SELECT security_id,
+                               period_type,
+                               fiscal_year,
+                               fiscal_period,
+                               period_start,
+                               period_end,
+                               revenue,
+                               gross_profit,
+                               ebitda,
+                               ebit,
+                               net_income,
+                               operating_cash_flow,
+                               capex,
+                               free_cash_flow,
+                               cash,
+                               short_term_debt,
+                               long_term_debt,
+                               total_debt,
+                               equity,
+                               total_assets,
+                               total_liabilities,
+                               diluted_shares,
+                               basic_shares,
+                               sbc,
+                               lease_liabilities,
+                               pension_liabilities,
+                               minority_interest,
+                               goodwill,
+                               intangibles,
+                               tax_rate_effective,
+                               net_debt,
+                               source_document_id,
+                               quality_flag_json::text AS quality_flag_json
+                        FROM fairvalue.financial_standardized
+                        WHERE security_id = :securityId
+                        ORDER BY period_end DESC, period_type
+                        """)
+                .param("securityId", securityId)
+                .query(recordRowMapper())
+                .list();
+    }
+
     public List<UsFinancialStandardizedRecord> findLatestBySecurityId(long securityId, int limit) {
         return jdbcClient.sql("""
                         SELECT security_id,

@@ -18,6 +18,9 @@ public class SourceDocumentRepository {
     }
 
     public long upsert(UsSourceDocument document) {
+        if (document.accessionNo() == null || document.accessionNo().isBlank()) {
+            return upsertByDocumentUrl(document);
+        }
         return jdbcClient.sql("""
                         INSERT INTO fairvalue.source_documents (
                             security_id,
@@ -83,6 +86,74 @@ public class SourceDocumentRepository {
                 .single();
     }
 
+    private long upsertByDocumentUrl(UsSourceDocument document) {
+        if (document.documentUrl() == null || document.documentUrl().isBlank()) {
+            throw new IllegalStateException("source_documents upsert requires accession_no or document_url.");
+        }
+        return jdbcClient.sql("""
+                        INSERT INTO fairvalue.source_documents (
+                            security_id,
+                            source_id,
+                            document_type,
+                            document_title,
+                            filing_date,
+                            accepted_at,
+                            period_end_date,
+                            accession_no,
+                            document_url,
+                            local_storage_path,
+                            checksum,
+                            parsed_status,
+                            parser_version,
+                            updated_at
+                        ) VALUES (
+                            :securityId,
+                            :sourceId,
+                            :documentType,
+                            :documentTitle,
+                            :filingDate,
+                            :acceptedAt,
+                            :periodEndDate,
+                            :accessionNo,
+                            :documentUrl,
+                            :localStoragePath,
+                            :checksum,
+                            :parsedStatus,
+                            :parserVersion,
+                            NOW()
+                        )
+                        ON CONFLICT (source_id, document_url) WHERE document_url IS NOT NULL
+                        DO UPDATE SET
+                            security_id = EXCLUDED.security_id,
+                            document_type = EXCLUDED.document_type,
+                            document_title = COALESCE(EXCLUDED.document_title, fairvalue.source_documents.document_title),
+                            filing_date = COALESCE(EXCLUDED.filing_date, fairvalue.source_documents.filing_date),
+                            accepted_at = COALESCE(EXCLUDED.accepted_at, fairvalue.source_documents.accepted_at),
+                            period_end_date = COALESCE(EXCLUDED.period_end_date, fairvalue.source_documents.period_end_date),
+                            local_storage_path = COALESCE(EXCLUDED.local_storage_path, fairvalue.source_documents.local_storage_path),
+                            checksum = COALESCE(EXCLUDED.checksum, fairvalue.source_documents.checksum),
+                            parsed_status = EXCLUDED.parsed_status,
+                            parser_version = EXCLUDED.parser_version,
+                            updated_at = NOW()
+                        RETURNING id
+                        """)
+                .param("securityId", document.securityId())
+                .param("sourceId", document.sourceId())
+                .param("documentType", document.documentType())
+                .param("documentTitle", document.documentTitle())
+                .param("filingDate", document.filingDate())
+                .param("acceptedAt", document.acceptedAt() == null ? null : java.sql.Timestamp.from(document.acceptedAt()))
+                .param("periodEndDate", document.periodEndDate())
+                .param("accessionNo", document.accessionNo())
+                .param("documentUrl", document.documentUrl())
+                .param("localStoragePath", document.localStoragePath())
+                .param("checksum", document.checksum())
+                .param("parsedStatus", document.parsedStatus())
+                .param("parserVersion", document.parserVersion())
+                .query(Long.class)
+                .single();
+    }
+
     public void updateParsedStatus(List<Long> sourceDocumentIds, String parsedStatus, String parserVersion) {
         for (Long sourceDocumentId : sourceDocumentIds) {
             jdbcClient.sql("""
@@ -111,6 +182,48 @@ public class SourceDocumentRepository {
         return count == null ? 0L : count;
     }
 
+    public long countBySecurityIdAndSourceId(long securityId, long sourceId) {
+        Long count = jdbcClient.sql("""
+                        SELECT COUNT(*)
+                        FROM fairvalue.source_documents
+                        WHERE security_id = :securityId
+                          AND source_id = :sourceId
+                        """)
+                .param("securityId", securityId)
+                .param("sourceId", sourceId)
+                .query(Long.class)
+                .single();
+        return count == null ? 0L : count;
+    }
+
+    public boolean existsRecentBySecurityIdAndSourceIdAndDocumentTypes(
+            long securityId,
+            long sourceId,
+            List<String> documentTypes,
+            java.time.LocalDate minFilingDate
+    ) {
+        if (documentTypes == null || documentTypes.isEmpty()) {
+            return false;
+        }
+        Boolean exists = jdbcClient.sql("""
+                        SELECT EXISTS(
+                            SELECT 1
+                            FROM fairvalue.source_documents
+                            WHERE security_id = :securityId
+                              AND source_id = :sourceId
+                              AND document_type IN (:documentTypes)
+                              AND filing_date >= :minFilingDate
+                        )
+                        """)
+                .param("securityId", securityId)
+                .param("sourceId", sourceId)
+                .param("documentTypes", documentTypes)
+                .param("minFilingDate", minFilingDate)
+                .query(Boolean.class)
+                .single();
+        return Boolean.TRUE.equals(exists);
+    }
+
     public List<UsSourceDocument> findLatestBySecurityId(long securityId, int limit) {
         return jdbcClient.sql("""
                         SELECT id,
@@ -133,6 +246,35 @@ public class SourceDocumentRepository {
                         LIMIT :limit
                         """)
                 .param("securityId", securityId)
+                .param("limit", limit)
+                .query(this::mapDocument)
+                .list();
+    }
+
+    public List<UsSourceDocument> findLatestBySecurityIdAndSourceId(long securityId, long sourceId, int limit) {
+        return jdbcClient.sql("""
+                        SELECT id,
+                               security_id,
+                               source_id,
+                               document_type,
+                               document_title,
+                               filing_date,
+                               accepted_at,
+                               period_end_date,
+                               accession_no,
+                               document_url,
+                               local_storage_path,
+                               checksum,
+                               parsed_status,
+                               parser_version
+                        FROM fairvalue.source_documents
+                        WHERE security_id = :securityId
+                          AND source_id = :sourceId
+                        ORDER BY filing_date DESC NULLS LAST, created_at DESC
+                        LIMIT :limit
+                        """)
+                .param("securityId", securityId)
+                .param("sourceId", sourceId)
                 .param("limit", limit)
                 .query(this::mapDocument)
                 .list();

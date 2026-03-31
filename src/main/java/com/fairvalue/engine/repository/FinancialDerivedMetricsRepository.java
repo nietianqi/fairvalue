@@ -98,6 +98,37 @@ public class FinancialDerivedMetricsRepository {
         return count == null ? 0L : count;
     }
 
+    public List<UsFinancialDerivedMetricRecord> findBySecurityId(long securityId) {
+        return jdbcClient.sql("""
+                        SELECT security_id,
+                               period_type,
+                               fiscal_year,
+                               fiscal_period,
+                               period_end,
+                               gross_margin,
+                               ebit_margin,
+                               fcf_margin,
+                               roe,
+                               roic,
+                               roa,
+                               fcf_conversion,
+                               accruals_ratio,
+                               net_debt_to_ebitda,
+                               interest_coverage,
+                               working_capital_ratio,
+                               book_value_per_share,
+                               eps_diluted,
+                               owner_earnings_estimate,
+                               altman_z_score
+                        FROM fairvalue.financial_derived_metrics
+                        WHERE security_id = :securityId
+                        ORDER BY period_end DESC, period_type
+                        """)
+                .param("securityId", securityId)
+                .query(rowMapper())
+                .list();
+    }
+
     public List<UsFinancialDerivedMetricRecord> findLatestBySecurityId(long securityId, int limit) {
         return jdbcClient.sql("""
                         SELECT security_id,

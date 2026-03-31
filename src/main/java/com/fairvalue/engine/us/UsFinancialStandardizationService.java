@@ -1,6 +1,7 @@
 package com.fairvalue.engine.us;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fairvalue.engine.repository.FinancialDerivedMetricsRepository;
 import com.fairvalue.engine.repository.FinancialStandardizedRepository;
 import com.fairvalue.engine.repository.SourceDocumentFactRawRepository;
 import org.springframework.stereotype.Service;
@@ -117,20 +118,26 @@ public class UsFinancialStandardizationService {
     private final UsSecurityMasterService usSecurityMasterService;
     private final SourceDocumentFactRawRepository sourceDocumentFactRawRepository;
     private final FinancialStandardizedRepository financialStandardizedRepository;
+    private final FinancialDerivedMetricsRepository financialDerivedMetricsRepository;
     private final UsFinancialDerivedMetricsService usFinancialDerivedMetricsService;
+    private final UsFinancialQualityScoringService usFinancialQualityScoringService;
     private final ObjectMapper objectMapper;
 
     public UsFinancialStandardizationService(
             UsSecurityMasterService usSecurityMasterService,
             SourceDocumentFactRawRepository sourceDocumentFactRawRepository,
             FinancialStandardizedRepository financialStandardizedRepository,
+            FinancialDerivedMetricsRepository financialDerivedMetricsRepository,
             UsFinancialDerivedMetricsService usFinancialDerivedMetricsService,
+            UsFinancialQualityScoringService usFinancialQualityScoringService,
             ObjectMapper objectMapper
     ) {
         this.usSecurityMasterService = usSecurityMasterService;
         this.sourceDocumentFactRawRepository = sourceDocumentFactRawRepository;
         this.financialStandardizedRepository = financialStandardizedRepository;
+        this.financialDerivedMetricsRepository = financialDerivedMetricsRepository;
         this.usFinancialDerivedMetricsService = usFinancialDerivedMetricsService;
+        this.usFinancialQualityScoringService = usFinancialQualityScoringService;
         this.objectMapper = objectMapper;
     }
 
@@ -147,6 +154,11 @@ public class UsFinancialStandardizationService {
         List<UsFinancialStandardizedRecord> rows = buildStandardizedRows(securityId, rawFacts);
         financialStandardizedRepository.replaceBySecurityId(securityId, rows);
         int derivedMetricRowCount = usFinancialDerivedMetricsService.refreshForSecurity(securityId, rows);
+        int financialQualityRowCount = usFinancialQualityScoringService.refreshForSecurity(
+                securityId,
+                rows,
+                financialDerivedMetricsRepository.findBySecurityId(securityId)
+        );
 
         long fyCount = rows.stream().filter(row -> "FY".equals(row.periodType())).count();
         long quarterCount = rows.stream().filter(row -> "Q".equals(row.periodType())).count();
@@ -158,6 +170,7 @@ public class UsFinancialStandardizationService {
                 rawFacts.size(),
                 rows.size(),
                 derivedMetricRowCount,
+                financialQualityRowCount,
                 fyCount,
                 quarterCount,
                 ttmCount,
@@ -969,6 +982,7 @@ public class UsFinancialStandardizationService {
             int rawFactCount,
             int standardizedRowCount,
             int derivedMetricRowCount,
+            int financialQualityRowCount,
             long fyCount,
             long quarterCount,
             long ttmCount,

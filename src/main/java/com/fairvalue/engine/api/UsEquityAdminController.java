@@ -1,6 +1,7 @@
 package com.fairvalue.engine.api;
 
 import com.fairvalue.engine.us.UsEquityAdminOverviewService;
+import com.fairvalue.engine.us.UsCompanyIrSyncService;
 import com.fairvalue.engine.us.UsFinancialStandardizationService;
 import com.fairvalue.engine.us.UsSecDocumentSyncService;
 import com.fairvalue.engine.us.UsUniverseSyncService;
@@ -15,17 +16,20 @@ import org.springframework.web.bind.annotation.RestController;
 public class UsEquityAdminController {
     private final UsUniverseSyncService usUniverseSyncService;
     private final UsSecDocumentSyncService usSecDocumentSyncService;
+    private final UsCompanyIrSyncService usCompanyIrSyncService;
     private final UsFinancialStandardizationService usFinancialStandardizationService;
     private final UsEquityAdminOverviewService usEquityAdminOverviewService;
 
     public UsEquityAdminController(
             UsUniverseSyncService usUniverseSyncService,
             UsSecDocumentSyncService usSecDocumentSyncService,
+            UsCompanyIrSyncService usCompanyIrSyncService,
             UsFinancialStandardizationService usFinancialStandardizationService,
             UsEquityAdminOverviewService usEquityAdminOverviewService
     ) {
         this.usUniverseSyncService = usUniverseSyncService;
         this.usSecDocumentSyncService = usSecDocumentSyncService;
+        this.usCompanyIrSyncService = usCompanyIrSyncService;
         this.usFinancialStandardizationService = usFinancialStandardizationService;
         this.usEquityAdminOverviewService = usEquityAdminOverviewService;
     }
@@ -43,6 +47,11 @@ public class UsEquityAdminController {
     @PostMapping("/{ticker}/sec-sync")
     public UsSecDocumentSyncService.SecDocumentSyncSummary syncTicker(@PathVariable String ticker) {
         return usSecDocumentSyncService.syncTicker(ticker);
+    }
+
+    @PostMapping("/{ticker}/ir-sync")
+    public UsCompanyIrSyncService.CompanyIrSyncSummary syncCompanyIr(@PathVariable String ticker) {
+        return usCompanyIrSyncService.syncTicker(ticker);
     }
 
     @PostMapping("/{ticker}/standardize")

@@ -2,6 +2,7 @@ package com.fairvalue.engine.api.us;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fairvalue.engine.us.UsCompanyIrClient;
 import com.fairvalue.engine.us.UsSecClient;
 import com.fairvalue.engine.us.UsSecurityMasterService;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,6 +43,9 @@ class UsEquityAdminControllerTest {
     @MockBean
     private UsSecClient usSecClient;
 
+    @MockBean
+    private UsCompanyIrClient usCompanyIrClient;
+
     private long aaplSecurityId;
 
     @BeforeEach
@@ -53,16 +57,19 @@ class UsEquityAdminControllerTest {
         jdbcClient.sql("DELETE FROM fairvalue.financial_derived_metrics WHERE security_id = :securityId")
                 .param("securityId", aaplSecurityId)
                 .update();
+        jdbcClient.sql("DELETE FROM fairvalue.financial_quality_scores WHERE security_id = :securityId")
+                .param("securityId", aaplSecurityId)
+                .update();
         jdbcClient.sql("DELETE FROM fairvalue.source_document_facts_raw WHERE security_id = :securityId")
                 .param("securityId", aaplSecurityId)
                 .update();
         jdbcClient.sql("""
                         DELETE FROM fairvalue.source_documents
                         WHERE security_id = :securityId
-                          AND source_id = (
+                          AND source_id IN (
                               SELECT id
                               FROM fairvalue.source_registry
-                              WHERE source_name = 'sec_edgar'
+                              WHERE source_name IN ('sec_edgar', 'company_ir')
                           )
                         """)
                 .param("securityId", aaplSecurityId)
@@ -145,6 +152,7 @@ class UsEquityAdminControllerTest {
                 .andExpect(jsonPath("$.raw_fact_count").value(44))
                 .andExpect(jsonPath("$.standardized_row_count").value(5))
                 .andExpect(jsonPath("$.derived_metric_row_count").value(5))
+                .andExpect(jsonPath("$.financial_quality_row_count").value(5))
                 .andExpect(jsonPath("$.quarter_count").value(4))
                 .andExpect(jsonPath("$.ttm_count").value(1))
                 .andExpect(jsonPath("$.status").value("completed"));
@@ -153,12 +161,43 @@ class UsEquityAdminControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ticker").value("AAPL"))
                 .andExpect(jsonPath("$.source_document_count").value(4))
+                .andExpect(jsonPath("$.company_ir_document_count").value(0))
                 .andExpect(jsonPath("$.raw_fact_count").value(44))
                 .andExpect(jsonPath("$.financial_standardized_count").value(5))
                 .andExpect(jsonPath("$.financial_derived_metric_count").value(5))
+                .andExpect(jsonPath("$.financial_quality_score_count").value(5))
                 .andExpect(jsonPath("$.latest_documents[0].document_type").value("10-Q"))
                 .andExpect(jsonPath("$.latest_financial_standardized[0].period_type").value("Q"))
-                .andExpect(jsonPath("$.latest_financial_derived_metrics[0].period_type").value("Q"));
+                .andExpect(jsonPath("$.latest_financial_derived_metrics[0].period_type").value("Q"))
+                .andExpect(jsonPath("$.latest_financial_quality_scores[0].period_type").value("Q"));
+    }
+
+    @Test
+    void shouldTriggerCompanyIrSyncFromAdminEndpoint() throws Exception {
+        when(usCompanyIrClient.fetch("https://www.apple.com/newsroom/rss-feed.rss")).thenReturn(Optional.of("""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <feed xmlns="http://www.w3.org/2005/Atom">
+                  <entry>
+                    <updated>2026-03-20T12:00:00Z</updated>
+                    <category term="PRESS RELEASE"/>
+                    <title>Apple reports fiscal first quarter results</title>
+                    <link href="https://www.apple.com/newsroom/2026/03/apple-reports-fiscal-first-quarter-results/"/>
+                  </entry>
+                </feed>
+                """));
+
+        mockMvc.perform(post("/v1/us-equities-admin/AAPL/ir-sync"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ticker").value("AAPL"))
+                .andExpect(jsonPath("$.sources_visited").value(1))
+                .andExpect(jsonPath("$.documents_upserted").value(1))
+                .andExpect(jsonPath("$.document_type_counts.EARNINGS_RELEASE").value(1))
+                .andExpect(jsonPath("$.status").value("completed"));
+
+        mockMvc.perform(get("/v1/us-equities-admin/AAPL/overview"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.company_ir_document_count").value(1))
+                .andExpect(jsonPath("$.latest_company_ir_documents[0].document_type").value("EARNINGS_RELEASE"));
     }
 
     private void insertQuarterDocument(

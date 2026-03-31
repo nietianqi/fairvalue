@@ -25,6 +25,11 @@ class UsEquityControllerTest {
                 .andExpect(jsonPath("$.ticker").value("AAPL"))
                 .andExpect(jsonPath("$.sector_template").exists())
                 .andExpect(jsonPath("$.company_type").exists());
+
+        mockMvc.perform(get("/v1/us-equities/AAPL/financial-quality"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ticker").value("AAPL"))
+                .andExpect(jsonPath("$.total_quality_score").exists());
     }
 
     @Test
