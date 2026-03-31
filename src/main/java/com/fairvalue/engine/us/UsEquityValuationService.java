@@ -10,6 +10,8 @@ import com.fairvalue.engine.api.dto.us.UsFinancialQualityResponse;
 import com.fairvalue.engine.api.dto.us.UsMethodOutput;
 import com.fairvalue.engine.api.dto.us.UsRiskItem;
 import com.fairvalue.engine.api.dto.us.UsScenarioOutput;
+import com.fairvalue.engine.api.dto.us.UsValuationDecisionResponse;
+import com.fairvalue.engine.api.dto.us.UsValuationExplanationResponse;
 import com.fairvalue.engine.api.dto.us.UsValuationReportResponse;
 import com.fairvalue.engine.api.dto.us.UsValuationRunRequest;
 import com.fairvalue.engine.api.dto.us.UsValuationRunResponse;
@@ -33,6 +35,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.OptionalDouble;
 import java.util.Set;
 
 @Service
@@ -40,6 +43,7 @@ public class UsEquityValuationService {
     private final MarketDataService marketDataService;
     private final ValuationService valuationService;
     private final UsSecClient usSecClient;
+    private final UsLongbridgeClient usLongbridgeClient;
     private final UsStooqClient usStooqClient;
     private final UsSecurityMasterService usSecurityMasterService;
     private final UsSecurityClassificationService usSecurityClassificationService;
@@ -56,6 +60,7 @@ public class UsEquityValuationService {
             MarketDataService marketDataService,
             ValuationService valuationService,
             UsSecClient usSecClient,
+            UsLongbridgeClient usLongbridgeClient,
             UsStooqClient usStooqClient,
             UsSecurityMasterService usSecurityMasterService,
             UsSecurityClassificationService usSecurityClassificationService,
@@ -71,6 +76,7 @@ public class UsEquityValuationService {
         this.marketDataService = marketDataService;
         this.valuationService = valuationService;
         this.usSecClient = usSecClient;
+        this.usLongbridgeClient = usLongbridgeClient;
         this.usStooqClient = usStooqClient;
         this.usSecurityMasterService = usSecurityMasterService;
         this.usSecurityClassificationService = usSecurityClassificationService;
@@ -332,28 +338,57 @@ public class UsEquityValuationService {
         double rawMarginOfSafety = (range.mid() - base.price()) / Math.max(range.mid(), 0.1);
         double marginOfSafety = MathSupport.round(rawMarginOfSafety - configured.requiredMarginOfSafety());
         String impliedExpectation = configured.reverseDcfAnalysis().impliedExpectationLabel();
-
-        Map<String, String> explanationBlocks = new LinkedHashMap<>();
-        explanationBlocks.put("one_line_verdict", verdict(base));
-        explanationBlocks.put("executive_summary", "Multi-method US valuation combines configurable FCFF, reverse DCF, relative multiples, and historical anchors.");
-        explanationBlocks.put("model_selection", configured.modelSelectionReason());
-        explanationBlocks.put("reverse_dcf", "Reverse DCF implied expectation=" + impliedExpectation + ", notes=" + configured.reverseDcfAnalysis().notesJson());
-        explanationBlocks.put("risk_commentary", "Risk matrix adjusted WACC by "
-                + MathSupport.round(riskMatrixResult.waccAdjustment())
-                + ", required margin of safety by "
-                + MathSupport.round(riskMatrixResult.marginOfSafetyAdjustment())
-                + ", and shifted bear/bull probabilities by "
-                + MathSupport.round(riskMatrixResult.bearProbabilityDelta())
-                + "/"
-                + MathSupport.round(riskMatrixResult.bullProbabilityDelta())
-                + ".");
-        explanationBlocks.put("margin_of_safety", "Raw margin="
-                + MathSupport.round(rawMarginOfSafety)
-                + ", required margin="
-                + MathSupport.round(configured.requiredMarginOfSafety())
-                + ", effective margin="
-                + marginOfSafety);
-        explanationBlocks.put("style_horizon", "Style=" + effective.style() + ", Horizon=" + effective.horizon() + ", Consensus=" + effective.useConsensus());
+        UsDataQualityResponse dataQuality = dataQuality(ticker);
+        UsFinancialQualityResponse quality = financialQuality(ticker);
+        UsEquityProfileResponse profileResponse = profile(ticker);
+        Map<String, Object> dataQualityAudit = buildDataQualityAudit(dataQuality);
+        Map<String, Object> businessAndMoat = buildBusinessAndMoat(profileResponse, quality);
+        Map<String, Object> financialScorecard = buildFinancialScorecard(quality);
+        Map<String, String> actionable = buildActionableFramework();
+        Map<String, Object> sourceAttribution = buildSourceAttribution(snapshot, selectedMethods, dataQuality);
+        String uncertainty = buildUncertaintyAndErrorSources(snapshot, dataQuality, selectedMethods);
+        Map<String, String> explanationBlocks = buildExplanationBlocks(
+                snapshot,
+                profileResponse,
+                quality,
+                dataQualityAudit,
+                businessAndMoat,
+                financialScorecard,
+                sourceAttribution,
+                selectedMethods,
+                methodOutputs,
+                scenarioMatrix,
+                riskMatrix,
+                range,
+                rawMarginOfSafety,
+                configured.requiredMarginOfSafety(),
+                marginOfSafety,
+                configured.modelSelectionReason(),
+                impliedExpectation,
+                actionable,
+                uncertainty
+        );
+        UsValuationSummaryResponse summary = buildSummaryResponse(
+                snapshot,
+                base,
+                range,
+                effectiveConfidence,
+                impliedExpectation
+        );
+        UsValuationDecisionResponse decision = buildDecisionResponse(
+                snapshot,
+                selectedMethods.stream().map(UsConfiguredMethodValuation::method).toList(),
+                scenarioMatrix,
+                riskMatrix,
+                dataQualityAudit,
+                sourceAttribution,
+                range,
+                effectiveConfidence,
+                marginOfSafety,
+                impliedExpectation,
+                riskMatrixResult.valueTrapFlag()
+        );
+        UsValuationExplanationResponse explanation = buildExplanationResponse(explanationBlocks);
 
         usValuationPersistenceService.persistRun(
                 ticker,
@@ -370,7 +405,7 @@ public class UsEquityValuationService {
                 effectiveConfidence,
                 marginOfSafety,
                 configured.reverseDcfAnalysis(),
-                verdict(base),
+                summary.verdict(),
                 classified
         );
 
@@ -385,93 +420,32 @@ public class UsEquityValuationService {
                 marginOfSafety,
                 impliedExpectation,
                 riskMatrix,
-                explanationBlocks
+                explanationBlocks,
+                summary,
+                decision,
+                explanation
         );
     }
 
     public UsValuationSummaryResponse summary(String ticker) {
-        UsValuationRunResponse run = runValuation(ticker, new UsValuationRunRequest("balanced", "6-18m", true, List.of(), Map.of()));
-        ValuationResult base = valuationService.valuate(Market.US, ticker);
-
-        UsFairValueRange buyZone = new UsFairValueRange(
-                MathSupport.round(run.fairValueRange().low() * 0.85),
-                MathSupport.round(run.fairValueRange().low()),
-                MathSupport.round(run.fairValueRange().mid() * 0.92)
-        );
-        UsFairValueRange holdZone = new UsFairValueRange(
-                MathSupport.round(run.fairValueRange().low()),
-                MathSupport.round(run.fairValueRange().mid()),
-                MathSupport.round(run.fairValueRange().high())
-        );
-        UsFairValueRange avoidZone = new UsFairValueRange(
-                MathSupport.round(run.fairValueRange().high()),
-                MathSupport.round(run.fairValueRange().high() * 1.08),
-                MathSupport.round(run.fairValueRange().high() * 1.18)
-        );
-
-        return new UsValuationSummaryResponse(
-                run.ticker(),
-                verdict(base),
-                run.fairValueRange(),
-                assessment(base),
-                base.upside(),
-                base.confidence(),
-                buyZone,
-                holdZone,
-                avoidZone
-        );
+        return runValuation(ticker, new UsValuationRunRequest("balanced", "6-18m", true, List.of(), Map.of())).summary();
     }
 
     public UsValuationReportResponse report(String ticker) {
         UsValuationRunResponse run = runValuation(ticker, new UsValuationRunRequest("balanced", "6-18m", true, List.of(), Map.of()));
         UsDataQualityResponse dataQuality = dataQuality(ticker);
         UsFinancialQualityResponse quality = financialQuality(ticker);
-        UsEquityProfileResponse profile = profile(ticker);
-
-        Map<String, Object> dataQualityAudit = new LinkedHashMap<>();
-        dataQualityAudit.put("latest_10k_date", dataQuality.latest10kDate());
-        dataQualityAudit.put("latest_10q_date", dataQuality.latest10qDate());
-        dataQualityAudit.put("share_count_verified", dataQuality.shareCountVerified());
-        dataQualityAudit.put("sbc_quantified", dataQuality.sbcQuantified());
-        dataQualityAudit.put("confidence_level", dataQuality.confidenceLevel());
-        dataQualityAudit.put("guidance_status", dataQuality.guidanceStatus());
-        dataQualityAudit.put("missing_items", dataQuality.missingItems());
-        dataQualityAudit.put("warning_flags", dataQuality.warningFlags());
-
-        Map<String, Object> businessAndMoat = new LinkedHashMap<>();
-        double moatScore = MathSupport.round(MathSupport.clamp(0.45 + quality.revenueQualityScore() * 0.30 + quality.capitalEfficiencyScore() * 0.25, 0.20, 0.95));
-        businessAndMoat.put("company_type", profile.companyType());
-        businessAndMoat.put("sector_template", profile.sectorTemplate());
-        businessAndMoat.put("moat_score", moatScore);
-        businessAndMoat.put("moat_level", moatScore > 0.75 ? "Wide" : moatScore > 0.58 ? "Narrow" : "None");
-
-        Map<String, Object> financialScorecard = new LinkedHashMap<>();
-        financialScorecard.put("total_quality_score", quality.totalQualityScore());
-        financialScorecard.put("quality_breakdown", Map.of(
-                "earnings", quality.earningsQualityScore(),
-                "revenue", quality.revenueQualityScore(),
-                "balance_sheet", quality.balanceSheetScore(),
-                "capital_efficiency", quality.capitalEfficiencyScore(),
-                "capital_allocation", quality.capitalAllocationScore()
-        ));
-        financialScorecard.put("red_flags", quality.redFlags());
-
-        ValuationResult base = valuationService.valuate(Market.US, ticker);
-        Map<String, Object> usMarketModifiers = new LinkedHashMap<>();
-        usMarketModifiers.put("sbc_ratio", MathSupport.round(usSnapshot(ticker).fundamentals().sbcRatio()));
-        usMarketModifiers.put("buyback_yield", MathSupport.round(usSnapshot(ticker).fundamentals().buybackYield()));
-        usMarketModifiers.put("analyst_coverage", MathSupport.round(usSnapshot(ticker).fundamentals().analystCoverage()));
-        usMarketModifiers.put("implied_expectation", run.impliedExpectation());
-        usMarketModifiers.put("data_version", usSnapshot(ticker).dataVersion());
-
-        Map<String, String> actionable = new LinkedHashMap<>();
-        actionable.put("buy", "Consider adding only inside buy-zone and when risk matrix has no new High/High item.");
-        actionable.put("hold", "Hold when price stays in hold-zone and thesis quality metrics remain stable.");
-        actionable.put("reduce", "Reduce when price enters avoid-zone or expectation label stays aggressive without catalyst support.");
+        UsEquityProfileResponse profileResponse = profile(ticker);
+        Map<String, Object> dataQualityAudit = buildDataQualityAudit(dataQuality);
+        Map<String, Object> businessAndMoat = buildBusinessAndMoat(profileResponse, quality);
+        Map<String, Object> financialScorecard = buildFinancialScorecard(quality);
+        Map<String, Object> usMarketModifiers = buildMarketModifiers(usSnapshot(ticker), run, run.decision().sourceAttribution());
+        Map<String, String> actionable = buildActionableFramework();
+        String uncertainty = buildUncertaintyAndErrorSources(usSnapshot(ticker), dataQuality, List.of());
 
         return new UsValuationReportResponse(
                 ticker.toUpperCase(Locale.ROOT),
-                verdict(base),
+                run.summary().verdict(),
                 "US valuation combines cash-flow, expectation and relative anchors with explicit scenario probabilities.",
                 dataQualityAudit,
                 businessAndMoat,
@@ -482,7 +456,10 @@ public class UsEquityValuationService {
                 run.scenarioMatrix(),
                 run.fairValueRange(),
                 actionable,
-                "Model risk comes from assumptions on WACC, growth durability, multiple regime and diluted share trajectory."
+                uncertainty,
+                run.summary(),
+                run.decision(),
+                run.explanation()
         );
     }
 
@@ -517,6 +494,362 @@ public class UsEquityValuationService {
                 new UsScenarioOutput("base", baseProb, range.mid(), range.low(), range.high(), MathSupport.round(range.mid() / base.price() - 1.0)),
                 new UsScenarioOutput("bull", bull, range.high(), MathSupport.round(range.mid() * 0.95), MathSupport.round(range.high() * 1.12), MathSupport.round(range.high() / base.price() - 1.0))
         );
+    }
+
+    private UsValuationSummaryResponse buildSummaryResponse(
+            StockSnapshot snapshot,
+            ValuationResult base,
+            UsFairValueRange range,
+            double confidenceLevel,
+            String impliedExpectation
+    ) {
+        UsFairValueRange buyZone = new UsFairValueRange(
+                MathSupport.round(range.low() * 0.85),
+                MathSupport.round(range.low()),
+                MathSupport.round(range.mid() * 0.92)
+        );
+        UsFairValueRange holdZone = new UsFairValueRange(
+                MathSupport.round(range.low()),
+                MathSupport.round(range.mid()),
+                MathSupport.round(range.high())
+        );
+        UsFairValueRange avoidZone = new UsFairValueRange(
+                MathSupport.round(range.high()),
+                MathSupport.round(range.high() * 1.08),
+                MathSupport.round(range.high() * 1.18)
+        );
+        return new UsValuationSummaryResponse(
+                snapshot.symbol(),
+                verdict(base),
+                range,
+                assessment(base),
+                base.upside(),
+                confidenceLevel,
+                buyZone,
+                holdZone,
+                avoidZone,
+                snapshot.price(),
+                snapshot.dataVersion(),
+                impliedExpectation
+        );
+    }
+
+    private UsValuationDecisionResponse buildDecisionResponse(
+            StockSnapshot snapshot,
+            List<String> valuationMethods,
+            List<UsScenarioOutput> scenarioMatrix,
+            List<UsRiskItem> riskMatrix,
+            Map<String, Object> dataQualityAudit,
+            Map<String, Object> sourceAttribution,
+            UsFairValueRange range,
+            double confidenceLevel,
+            double marginOfSafety,
+            String impliedExpectation,
+            boolean valueTrapFlag
+    ) {
+        return new UsValuationDecisionResponse(
+                snapshot.symbol(),
+                snapshot.price(),
+                range,
+                confidenceLevel,
+                marginOfSafety,
+                impliedExpectation,
+                valueTrapFlag,
+                valuationMethods,
+                scenarioMatrix,
+                riskMatrix,
+                dataQualityAudit,
+                sourceAttribution
+        );
+    }
+
+    private UsValuationExplanationResponse buildExplanationResponse(Map<String, String> explanationBlocks) {
+        List<UsExplanationBlock> blocks = new ArrayList<>();
+        int order = 1;
+        for (String key : explanationOrder()) {
+            blocks.add(new UsExplanationBlock(
+                    key,
+                    explanationTitle(key),
+                    explanationBlocks.getOrDefault(key, ""),
+                    order
+            ));
+            order += 1;
+        }
+        return new UsValuationExplanationResponse(blocks);
+    }
+
+    private Map<String, String> buildExplanationBlocks(
+            StockSnapshot snapshot,
+            UsEquityProfileResponse profile,
+            UsFinancialQualityResponse quality,
+            Map<String, Object> dataQualityAudit,
+            Map<String, Object> businessAndMoat,
+            Map<String, Object> financialScorecard,
+            Map<String, Object> sourceAttribution,
+            List<UsConfiguredMethodValuation> selectedMethods,
+            List<UsMethodOutput> methodOutputs,
+            List<UsScenarioOutput> scenarioMatrix,
+            List<UsRiskItem> riskMatrix,
+            UsFairValueRange fairValueRange,
+            double rawMarginOfSafety,
+            double requiredMarginOfSafety,
+            double effectiveMarginOfSafety,
+            String modelSelectionReason,
+            String impliedExpectation,
+            Map<String, String> actionableFramework,
+            String uncertainty
+    ) {
+        Map<String, String> blocks = new LinkedHashMap<>();
+        blocks.put("one_line_verdict", buildOneLineVerdict(snapshot, fairValueRange, impliedExpectation));
+        blocks.put("executive_summary", "Current price " + MathSupport.round(snapshot.price())
+                + " versus fair value range " + fairValueRange.low() + " - " + fairValueRange.high()
+                + ". The engine blends FCFF, historical multiples, relative valuation, and reverse DCF with explicit risk adjustments.");
+        blocks.put("data_quality_audit", asText(dataQualityAudit));
+        blocks.put("business_and_moat", asText(businessAndMoat));
+        blocks.put("financial_quality_scorecard", asText(financialScorecard));
+        blocks.put("growth_and_catalysts", "Revenue growth="
+                + MathSupport.round(quality.profitability5yTtm().getOrDefault("revenue_growth", 0.0))
+                + ", FCF margin="
+                + MathSupport.round(quality.profitability5yTtm().getOrDefault("fcf_margin", 0.0))
+                + ", implied expectation="
+                + impliedExpectation
+                + ", source attribution="
+                + asText(sourceAttribution));
+        blocks.put("risk_matrix", riskSummary(riskMatrix));
+        blocks.put("valuation_breakdown", valuationBreakdownSummary(methodOutputs, selectedMethods, sourceAttribution, modelSelectionReason));
+        blocks.put("scenario_matrix", scenarioSummary(scenarioMatrix));
+        blocks.put("final_fair_value", "Current price="
+                + MathSupport.round(snapshot.price())
+                + ", fair value range="
+                + fairValueRange.low()
+                + " / "
+                + fairValueRange.mid()
+                + " / "
+                + fairValueRange.high()
+                + ", raw margin="
+                + MathSupport.round(rawMarginOfSafety)
+                + ", required margin="
+                + MathSupport.round(requiredMarginOfSafety)
+                + ", effective margin="
+                + MathSupport.round(effectiveMarginOfSafety));
+        blocks.put("actionable_framework", asText(actionableFramework));
+        blocks.put("uncertainty_and_error_sources", uncertainty);
+        return blocks;
+    }
+
+    private Map<String, Object> buildDataQualityAudit(UsDataQualityResponse dataQuality) {
+        Map<String, Object> dataQualityAudit = new LinkedHashMap<>();
+        dataQualityAudit.put("latest_10k_date", dataQuality.latest10kDate());
+        dataQualityAudit.put("latest_10q_date", dataQuality.latest10qDate());
+        dataQualityAudit.put("share_count_verified", dataQuality.shareCountVerified());
+        dataQualityAudit.put("sbc_quantified", dataQuality.sbcQuantified());
+        dataQualityAudit.put("confidence_level", dataQuality.confidenceLevel());
+        dataQualityAudit.put("guidance_status", dataQuality.guidanceStatus());
+        dataQualityAudit.put("missing_items", dataQuality.missingItems());
+        dataQualityAudit.put("warning_flags", dataQuality.warningFlags());
+        return dataQualityAudit;
+    }
+
+    private Map<String, Object> buildBusinessAndMoat(UsEquityProfileResponse profile, UsFinancialQualityResponse quality) {
+        Map<String, Object> businessAndMoat = new LinkedHashMap<>();
+        double moatScore = MathSupport.round(MathSupport.clamp(
+                0.45 + quality.revenueQualityScore() * 0.30 + quality.capitalEfficiencyScore() * 0.25,
+                0.20,
+                0.95
+        ));
+        businessAndMoat.put("company_type", profile.companyType());
+        businessAndMoat.put("sector_template", profile.sectorTemplate());
+        businessAndMoat.put("moat_score", moatScore);
+        businessAndMoat.put("moat_level", moatScore > 0.75 ? "Wide" : moatScore > 0.58 ? "Narrow" : "None");
+        return businessAndMoat;
+    }
+
+    private Map<String, Object> buildFinancialScorecard(UsFinancialQualityResponse quality) {
+        Map<String, Object> financialScorecard = new LinkedHashMap<>();
+        financialScorecard.put("total_quality_score", quality.totalQualityScore());
+        financialScorecard.put("quality_breakdown", Map.of(
+                "earnings", quality.earningsQualityScore(),
+                "revenue", quality.revenueQualityScore(),
+                "balance_sheet", quality.balanceSheetScore(),
+                "capital_efficiency", quality.capitalEfficiencyScore(),
+                "capital_allocation", quality.capitalAllocationScore()
+        ));
+        financialScorecard.put("red_flags", quality.redFlags());
+        financialScorecard.put("altman_z_score", quality.altmanZ());
+        financialScorecard.put("owner_earnings_estimate", quality.ownerEarnings());
+        return financialScorecard;
+    }
+
+    private Map<String, Object> buildMarketModifiers(
+            StockSnapshot snapshot,
+            UsValuationRunResponse run,
+            Map<String, Object> sourceAttribution
+    ) {
+        Map<String, Object> usMarketModifiers = new LinkedHashMap<>();
+        usMarketModifiers.put("sbc_ratio", MathSupport.round(snapshot.fundamentals().sbcRatio()));
+        usMarketModifiers.put("buyback_yield", MathSupport.round(snapshot.fundamentals().buybackYield()));
+        usMarketModifiers.put("analyst_coverage", MathSupport.round(snapshot.fundamentals().analystCoverage()));
+        usMarketModifiers.put("implied_expectation", run.impliedExpectation());
+        usMarketModifiers.put("data_version", snapshot.dataVersion());
+        usMarketModifiers.put("source_attribution", sourceAttribution);
+        return usMarketModifiers;
+    }
+
+    private Map<String, String> buildActionableFramework() {
+        Map<String, String> actionable = new LinkedHashMap<>();
+        actionable.put("buy", "Consider adding only inside buy-zone and when risk matrix has no new High/High item.");
+        actionable.put("hold", "Hold when price stays in hold-zone and thesis quality metrics remain stable.");
+        actionable.put("reduce", "Reduce when price enters avoid-zone or expectation label stays aggressive without catalyst support.");
+        return actionable;
+    }
+
+    private Map<String, Object> buildSourceAttribution(
+            StockSnapshot snapshot,
+            List<UsConfiguredMethodValuation> selectedMethods,
+            UsDataQualityResponse dataQuality
+    ) {
+        Map<String, Object> attribution = new LinkedHashMap<>();
+        attribution.put("data_version", snapshot.dataVersion());
+        attribution.put("price_source", snapshot.dataVersion().contains("|")
+                ? snapshot.dataVersion().substring(0, snapshot.dataVersion().indexOf('|'))
+                : snapshot.dataVersion());
+        attribution.put("guidance_status", dataQuality.guidanceStatus());
+
+        Map<String, String> parameterSources = new LinkedHashMap<>();
+        for (UsConfiguredMethodValuation method : selectedMethods) {
+            if (method.assumptionsJson() == null || method.assumptionsJson().isBlank()) {
+                continue;
+            }
+            try {
+                Map<String, Object> assumptions = objectMapper.readValue(method.assumptionsJson(), new TypeReference<Map<String, Object>>() { });
+                Object rawSources = assumptions.get("parameter_sources");
+                if (rawSources instanceof Map<?, ?> sourcesMap) {
+                    for (Map.Entry<?, ?> entry : sourcesMap.entrySet()) {
+                        if (entry.getKey() != null && entry.getValue() != null) {
+                            parameterSources.put(entry.getKey().toString(), entry.getValue().toString());
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+                // Keep source attribution best-effort; it must not break valuation output.
+            }
+        }
+        attribution.put("parameter_sources", parameterSources);
+        attribution.put("macro_sources", parameterSources.values().stream().distinct().toList());
+        return attribution;
+    }
+
+    private String buildUncertaintyAndErrorSources(
+            StockSnapshot snapshot,
+            UsDataQualityResponse dataQuality,
+            List<UsConfiguredMethodValuation> selectedMethods
+    ) {
+        List<String> notes = new ArrayList<>();
+        String dataVersion = snapshot.dataVersion() == null ? "" : snapshot.dataVersion().toLowerCase(Locale.ROOT);
+        notes.add("price data version=" + snapshot.dataVersion());
+        if (!dataVersion.contains("longbridge") && dataVersion.contains("stooq")) {
+            notes.add("US price layer is still on fallback source for this run.");
+        }
+        if (!dataQuality.warningFlags().isEmpty()) {
+            notes.add("data quality warnings=" + String.join(", ", dataQuality.warningFlags()));
+        }
+        if (!dataQuality.missingItems().isEmpty()) {
+            notes.add("missing items=" + String.join(", ", dataQuality.missingItems()));
+        }
+        long sparseMethods = selectedMethods.stream()
+                .filter(method -> method.notes() != null && method.notes().toLowerCase(Locale.ROOT).contains("sparse"))
+                .count();
+        if (sparseMethods > 0) {
+            notes.add("historical/relative market samples remain sparse for part of the method set.");
+        }
+        return String.join(" ", notes);
+    }
+
+    private String buildOneLineVerdict(StockSnapshot snapshot, UsFairValueRange fairValueRange, String impliedExpectation) {
+        double upside = fairValueRange.mid() / Math.max(snapshot.price(), 0.1) - 1.0;
+        if (upside >= 0.20) {
+            return "Undervalued with margin and manageable expectations.";
+        }
+        if (upside >= 0.05) {
+            return "Slightly undervalued, but still dependent on execution.";
+        }
+        if (upside <= -0.20) {
+            return "Overvalued with aggressive expectations already embedded.";
+        }
+        if (upside <= -0.05) {
+            return "Slightly overvalued with limited margin of safety.";
+        }
+        return "Near fair value, with expectation label=" + impliedExpectation + ".";
+    }
+
+    private String riskSummary(List<UsRiskItem> riskMatrix) {
+        return riskMatrix.stream()
+                .map(item -> item.riskType() + "=" + item.probability() + "/" + item.impact() + " -> " + item.adjustmentType() + ":" + item.adjustment())
+                .reduce((left, right) -> left + "; " + right)
+                .orElse("No structured risk items generated.");
+    }
+
+    private String scenarioSummary(List<UsScenarioOutput> scenarioMatrix) {
+        return scenarioMatrix.stream()
+                .map(item -> item.scenario() + "=" + item.probability() + "@" + item.targetPrice())
+                .reduce((left, right) -> left + "; " + right)
+                .orElse("No scenario outputs generated.");
+    }
+
+    private String valuationBreakdownSummary(
+            List<UsMethodOutput> methodOutputs,
+            List<UsConfiguredMethodValuation> selectedMethods,
+            Map<String, Object> sourceAttribution,
+            String modelSelectionReason
+    ) {
+        String methods = methodOutputs.stream()
+                .map(output -> output.method() + "=" + output.baseValue() + "x" + output.weight())
+                .reduce((left, right) -> left + "; " + right)
+                .orElse("No methods selected.");
+        return modelSelectionReason + " Methods: " + methods + ". Sources: " + asText(sourceAttribution);
+    }
+
+    private List<String> explanationOrder() {
+        return List.of(
+                "one_line_verdict",
+                "executive_summary",
+                "data_quality_audit",
+                "business_and_moat",
+                "financial_quality_scorecard",
+                "growth_and_catalysts",
+                "risk_matrix",
+                "valuation_breakdown",
+                "scenario_matrix",
+                "final_fair_value",
+                "actionable_framework",
+                "uncertainty_and_error_sources"
+        );
+    }
+
+    private String explanationTitle(String key) {
+        return switch (key) {
+            case "one_line_verdict" -> "One-line Verdict";
+            case "executive_summary" -> "Executive Summary";
+            case "data_quality_audit" -> "Data Quality Audit";
+            case "business_and_moat" -> "Business And Moat";
+            case "financial_quality_scorecard" -> "Financial Quality Scorecard";
+            case "growth_and_catalysts" -> "Growth And Catalysts";
+            case "risk_matrix" -> "Risk Matrix";
+            case "valuation_breakdown" -> "Valuation Breakdown";
+            case "scenario_matrix" -> "Scenario Matrix";
+            case "final_fair_value" -> "Final Fair Value";
+            case "actionable_framework" -> "Actionable Framework";
+            case "uncertainty_and_error_sources" -> "Uncertainty And Error Sources";
+            default -> key;
+        };
+    }
+
+    private String asText(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception ignored) {
+            return String.valueOf(value);
+        }
     }
 
     private UsMethodOutput methodOutput(UsConfiguredMethodValuation method, String style) {
@@ -779,6 +1112,16 @@ public class UsEquityValuationService {
     }
 
     private double usDailyChange(String ticker) {
+        OptionalDouble longbridgeChange = usLongbridgeClient.fetchMarketData(ticker)
+                .map(UsLongbridgeClient.UsLongbridgeMarketData::changeRate)
+                .filter(Double::isFinite)
+                .map(value -> Math.abs(value) > 1.0 ? value / 100.0 : value)
+                .stream()
+                .mapToDouble(Double::doubleValue)
+                .findFirst();
+        if (longbridgeChange.isPresent()) {
+            return longbridgeChange.getAsDouble();
+        }
         return usStooqClient.fetchQuote(ticker)
                 .map(UsStooqClient.UsQuote::dailyChange)
                 .orElse(0.0);

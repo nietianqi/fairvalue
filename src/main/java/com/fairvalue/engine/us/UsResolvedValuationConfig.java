@@ -9,6 +9,7 @@ public record UsResolvedValuationConfig(
         Map<String, Double> normalizedWeights,
         Map<String, Double> numericParameters,
         double defaultMarginOfSafety,
-        List<String> riskNotes
+        List<String> riskNotes,
+        Map<String, String> parameterSources
 ) {
 }

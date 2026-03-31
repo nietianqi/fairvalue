@@ -50,7 +50,9 @@ public class UsValuationConfigService {
 
         List<String> primaryMethods = resolvePrimaryMethods(templateRecord);
         Map<String, Double> defaultWeights = resolveDefaultWeights(templateRecord, primaryMethods);
-        Map<String, Double> parameterMap = resolveParameterMap(securityId, resolvedTemplate, effectiveDate);
+        Map<String, Double> parameterMap = new LinkedHashMap<>();
+        Map<String, String> parameterSources = new LinkedHashMap<>();
+        resolveParameterMap(securityId, resolvedTemplate, effectiveDate, parameterMap, parameterSources);
         double marginOfSafety = resolveMarginOfSafety(templateRecord);
         List<String> riskNotes = parseStringList(templateRecord == null ? null : templateRecord.riskNotesJson());
 
@@ -60,7 +62,8 @@ public class UsValuationConfigService {
                 normalizeWeights(defaultWeights, primaryMethods),
                 parameterMap,
                 marginOfSafety,
-                riskNotes
+                riskNotes,
+                parameterSources
         );
     }
 
@@ -109,19 +112,28 @@ public class UsValuationConfigService {
         return normalized;
     }
 
-    private Map<String, Double> resolveParameterMap(Long securityId, String sectorTemplate, LocalDate effectiveDate) {
+    private void resolveParameterMap(
+            Long securityId,
+            String sectorTemplate,
+            LocalDate effectiveDate,
+            Map<String, Double> values,
+            Map<String, String> sources
+    ) {
         LocalDate resolvedDate = effectiveDate == null ? LocalDate.now() : effectiveDate;
-        Map<String, Double> values = new LinkedHashMap<>();
         valuationParameterSetRepository.findActiveBySectorTemplate(sectorTemplate, resolvedDate)
-                .forEach(record -> putParameter(values, record));
+                .forEach(record -> putParameter(values, sources, record, "valuation_parameter_set"));
         if (securityId != null) {
             valuationParameterSetRepository.findActiveBySecurityId(securityId, resolvedDate)
-                    .forEach(record -> putParameter(values, record));
+                    .forEach(record -> putParameter(values, sources, record, "security_parameter_set"));
         }
-        return values;
     }
 
-    private void putParameter(Map<String, Double> values, UsValuationParameterRecord record) {
+    private void putParameter(
+            Map<String, Double> values,
+            Map<String, String> sources,
+            UsValuationParameterRecord record,
+            String sourceLabel
+    ) {
         if (record == null) {
             return;
         }
@@ -129,7 +141,9 @@ public class UsValuationConfigService {
         if (numeric == null) {
             return;
         }
-        values.put(normalizeParameterKey(record.parameterType(), record.parameterKey()), numeric);
+        String parameterKey = normalizeParameterKey(record.parameterType(), record.parameterKey());
+        values.put(parameterKey, numeric);
+        sources.put(parameterKey, sourceLabel);
     }
 
     private String normalizeParameterKey(String parameterType, String parameterKey) {

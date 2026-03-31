@@ -144,6 +144,124 @@ public class UsMarketDataPersistenceService {
         lastSnapshotWriteAt.put(snapshotKey(ticker, tradeDate), snapshotTime);
     }
 
+    public void persistLongbridgeSnapshot(
+            String rawTicker,
+            StockSnapshot snapshot,
+            UsLongbridgeClient.UsLongbridgeMarketData marketData,
+            UsSecClient.UsSecProfile profile
+    ) {
+        if (marketData == null || snapshot == null || marketData.lastDone() <= 0) {
+            return;
+        }
+
+        String ticker = normalizeTicker(rawTicker);
+        Long securityId = usSecurityMasterService.resolveSecurityId(ticker).orElse(null);
+        Long sourceId = sourceRegistryRepository.findIdBySourceName(UsSecurityIdentifierService.LONGBRIDGE_API).orElse(null);
+        if (securityId == null || sourceId == null) {
+            return;
+        }
+
+        LocalDate tradeDate = marketData.tradeDate() == null ? LocalDate.now() : marketData.tradeDate();
+        Instant snapshotTime = Instant.now();
+
+        for (UsLongbridgeClient.UsLongbridgeDailyBar dailyBar : marketData.dailyBars()) {
+            if (dailyBar == null || dailyBar.tradeDate() == null || dailyBar.close() <= 0) {
+                continue;
+            }
+            marketPriceDailyRepository.upsert(
+                    securityId,
+                    dailyBar.tradeDate(),
+                    decimal(dailyBar.open()),
+                    decimal(dailyBar.high()),
+                    decimal(dailyBar.low()),
+                    decimal(dailyBar.close()),
+                    dailyBar.volume(),
+                    decimal(dailyBar.turnover()),
+                    decimal(dailyBar.close()),
+                    BigDecimal.ONE,
+                    BigDecimal.ONE,
+                    sourceId
+            );
+        }
+
+        if (!shouldWriteSnapshot(ticker, tradeDate, snapshotTime)) {
+            return;
+        }
+
+        marketDataRawRepository.insert(
+                securityId,
+                sourceId,
+                "snapshot",
+                tradeDate,
+                snapshotTime,
+                toJsonPayload(snapshot, marketData, profile)
+        );
+        if (!marketData.dailyBars().isEmpty()) {
+            marketDataRawRepository.insert(
+                    securityId,
+                    sourceId,
+                    "candlestick_daily",
+                    tradeDate,
+                    snapshotTime,
+                    toCandlestickPayload(snapshot.symbol(), marketData)
+            );
+        }
+
+        BigDecimal lastPrice = decimal(marketData.lastDone());
+        BigDecimal prevClose = marketData.prevClose() > 0 ? decimal(marketData.prevClose()) : null;
+        BigDecimal openPrice = marketData.open() > 0 ? decimal(marketData.open()) : null;
+        BigDecimal highPrice = marketData.high() > 0 ? decimal(marketData.high()) : null;
+        BigDecimal lowPrice = marketData.low() > 0 ? decimal(marketData.low()) : null;
+        BigDecimal turnover = marketData.turnover() > 0 ? decimal(marketData.turnover()) : null;
+        BigDecimal marketCap = marketData.totalMarketValue() > 0
+                ? decimal(marketData.totalMarketValue())
+                : marketCap(snapshot.price(), profile);
+        BigDecimal pe = marketData.peTtmRatio() > 0 ? decimal(marketData.peTtmRatio()) : positive(snapshot.fundamentals().pe());
+        BigDecimal pb = marketData.pbRatio() > 0 ? decimal(marketData.pbRatio()) : positive(snapshot.fundamentals().pb());
+        BigDecimal dividendYield = marketData.dividendYield() > 0
+                ? decimal(normalizeRate(marketData.dividendYield()))
+                : decimal(snapshot.fundamentals().dividendYield());
+        BigDecimal epsTtm = marketData.epsTtm() > 0
+                ? decimal(marketData.epsTtm())
+                : pe == null ? null : lastPrice.divide(pe, 6, RoundingMode.HALF_UP);
+        BigDecimal bps = marketData.bps() > 0
+                ? decimal(marketData.bps())
+                : pb == null ? null : lastPrice.divide(pb, 6, RoundingMode.HALF_UP);
+        BigDecimal floatShares = marketData.circulatingShares() > 0 ? decimal(marketData.circulatingShares()) : null;
+        BigDecimal totalShares = marketData.totalShares() > 0 ? decimal(marketData.totalShares()) : null;
+
+        marketSnapshotRepository.insert(
+                securityId,
+                snapshotTime,
+                lastPrice,
+                prevClose,
+                openPrice,
+                highPrice,
+                lowPrice,
+                marketData.volume(),
+                turnover,
+                marketCap,
+                pe,
+                pb,
+                dividendYield,
+                epsTtm,
+                bps,
+                floatShares,
+                totalShares,
+                sourceId
+        );
+        marketIntradaySnapshotRepository.insert(
+                securityId,
+                snapshotTime,
+                lastPrice,
+                marketData.volume(),
+                turnover,
+                decimal(normalizeRate(marketData.changeRate())),
+                sourceId
+        );
+        lastSnapshotWriteAt.put(snapshotKey(ticker, tradeDate), snapshotTime);
+    }
+
     private boolean shouldWriteSnapshot(String ticker, LocalDate tradeDate, Instant snapshotTime) {
         Instant lastWrite = lastSnapshotWriteAt.get(snapshotKey(ticker, tradeDate));
         return lastWrite == null || lastWrite.plus(SNAPSHOT_WRITE_INTERVAL).isBefore(snapshotTime);
@@ -191,6 +309,71 @@ public class UsMarketDataPersistenceService {
         }
     }
 
+    private String toJsonPayload(
+            StockSnapshot snapshot,
+            UsLongbridgeClient.UsLongbridgeMarketData marketData,
+            UsSecClient.UsSecProfile profile
+    ) {
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("ticker", snapshot.symbol());
+            payload.put("company_name", snapshot.companyName());
+            payload.put("industry", snapshot.industry());
+            payload.put("data_version", snapshot.dataVersion());
+            payload.put("quote_source", UsSecurityIdentifierService.LONGBRIDGE_API);
+            payload.put("enrichment_source", profile == null ? null : UsSecurityIdentifierService.SEC_EDGAR);
+
+            Map<String, Object> quotePayload = new LinkedHashMap<>();
+            quotePayload.put("symbol_full", marketData.symbolFull());
+            quotePayload.put("trade_date", marketData.tradeDate());
+            quotePayload.put("last_done", marketData.lastDone());
+            quotePayload.put("prev_close", marketData.prevClose());
+            quotePayload.put("open", marketData.open());
+            quotePayload.put("high", marketData.high());
+            quotePayload.put("low", marketData.low());
+            quotePayload.put("volume", marketData.volume());
+            quotePayload.put("turnover", marketData.turnover());
+            quotePayload.put("change_rate", normalizeRate(marketData.changeRate()));
+            quotePayload.put("total_market_value", marketData.totalMarketValue());
+            quotePayload.put("pe_ttm_ratio", marketData.peTtmRatio());
+            quotePayload.put("pb_ratio", marketData.pbRatio());
+            quotePayload.put("dividend_yield", normalizeRate(marketData.dividendYield()));
+            quotePayload.put("total_shares", marketData.totalShares());
+            quotePayload.put("circulating_shares", marketData.circulatingShares());
+            quotePayload.put("eps_ttm", marketData.epsTtm());
+            quotePayload.put("bps", marketData.bps());
+            payload.put("longbridge_quote", quotePayload);
+
+            if (profile != null) {
+                Map<String, Object> profilePayload = new LinkedHashMap<>();
+                profilePayload.put("exchange", profile.exchange());
+                profilePayload.put("industry", profile.industry());
+                profilePayload.put("shares_outstanding", profile.sharesOutstanding());
+                profilePayload.put("annual_revenue", profile.annualRevenue());
+                profilePayload.put("annual_net_income", profile.annualNetIncome());
+                profilePayload.put("cash", profile.cash());
+                profilePayload.put("total_debt", profile.totalDebt());
+                payload.put("sec_profile", profilePayload);
+            }
+            return objectMapper.writeValueAsString(payload);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to serialize Longbridge market data payload.", ex);
+        }
+    }
+
+    private String toCandlestickPayload(String ticker, UsLongbridgeClient.UsLongbridgeMarketData marketData) {
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("ticker", ticker);
+            payload.put("symbol_full", marketData.symbolFull());
+            payload.put("source", UsSecurityIdentifierService.LONGBRIDGE_API);
+            payload.put("bars", marketData.dailyBars());
+            return objectMapper.writeValueAsString(payload);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to serialize Longbridge daily bars payload.", ex);
+        }
+    }
+
     private BigDecimal marketCap(double price, UsSecClient.UsSecProfile profile) {
         if (profile == null || profile.sharesOutstanding() == null || profile.sharesOutstanding() <= 0 || price <= 0) {
             return null;
@@ -200,6 +383,13 @@ public class UsMarketDataPersistenceService {
 
     private BigDecimal positive(double value) {
         return value > 0 ? decimal(value) : null;
+    }
+
+    private double normalizeRate(double value) {
+        if (!Double.isFinite(value)) {
+            return 0.0;
+        }
+        return Math.abs(value) > 1.0 ? value / 100.0 : value;
     }
 
     private BigDecimal decimal(double value) {

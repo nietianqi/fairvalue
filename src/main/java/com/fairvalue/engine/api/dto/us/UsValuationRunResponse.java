@@ -14,6 +14,9 @@ public record UsValuationRunResponse(
         double marginOfSafety,
         String impliedExpectation,
         List<UsRiskItem> riskMatrix,
-        Map<String, String> explanationBlocks
+        Map<String, String> explanationBlocks,
+        UsValuationSummaryResponse summary,
+        UsValuationDecisionResponse decision,
+        UsValuationExplanationResponse explanation
 ) {
 }

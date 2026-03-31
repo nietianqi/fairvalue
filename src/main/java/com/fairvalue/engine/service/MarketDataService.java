@@ -4,6 +4,7 @@ import com.fairvalue.engine.cn.CnEastmoneyClient;
 import com.fairvalue.engine.domain.Market;
 import com.fairvalue.engine.domain.StockFundamentals;
 import com.fairvalue.engine.domain.StockSnapshot;
+import com.fairvalue.engine.us.UsLongbridgeClient;
 import com.fairvalue.engine.us.UsMarketDataPersistenceService;
 import com.fairvalue.engine.us.UsSecClient;
 import com.fairvalue.engine.us.UsStooqClient;
@@ -23,17 +24,20 @@ import java.util.Map;
 public class MarketDataService {
     private final Map<Market, Map<String, StockSnapshot>> data;
     private final CnEastmoneyClient cnEastmoneyClient;
+    private final UsLongbridgeClient usLongbridgeClient;
     private final UsStooqClient usStooqClient;
     private final UsSecClient usSecClient;
     private final UsMarketDataPersistenceService usMarketDataPersistenceService;
 
     public MarketDataService(
             CnEastmoneyClient cnEastmoneyClient,
+            UsLongbridgeClient usLongbridgeClient,
             UsStooqClient usStooqClient,
             UsSecClient usSecClient,
             UsMarketDataPersistenceService usMarketDataPersistenceService
     ) {
         this.cnEastmoneyClient = cnEastmoneyClient;
+        this.usLongbridgeClient = usLongbridgeClient;
         this.usStooqClient = usStooqClient;
         this.usSecClient = usSecClient;
         this.usMarketDataPersistenceService = usMarketDataPersistenceService;
@@ -55,11 +59,16 @@ public class MarketDataService {
 
         if (market == Market.US) {
             StockSnapshot fallback = template != null ? template : syntheticSnapshot(market, normalized);
+            UsLongbridgeClient.UsLongbridgeMarketData longbridge = usLongbridgeClient.fetchMarketData(normalized).orElse(null);
             UsStooqClient.UsQuote quote = usStooqClient.fetchQuote(normalized).orElse(null);
             UsSecClient.UsSecProfile profile = usSecClient.fetchProfile(normalized).orElse(null);
-            if (quote != null || profile != null) {
-                StockSnapshot merged = mergeUsSnapshot(fallback, quote, profile);
-                usMarketDataPersistenceService.persistLiveSnapshot(normalized, merged, quote, profile);
+            if (longbridge != null || quote != null || profile != null) {
+                StockSnapshot merged = mergeUsSnapshot(fallback, longbridge, quote, profile);
+                if (longbridge != null) {
+                    usMarketDataPersistenceService.persistLongbridgeSnapshot(normalized, merged, longbridge, profile);
+                } else {
+                    usMarketDataPersistenceService.persistLiveSnapshot(normalized, merged, quote, profile);
+                }
                 return merged;
             }
             return fallback;
@@ -330,34 +339,47 @@ public class MarketDataService {
 
     private StockSnapshot mergeUsSnapshot(
             StockSnapshot template,
+            UsLongbridgeClient.UsLongbridgeMarketData longbridge,
             UsStooqClient.UsQuote quote,
             UsSecClient.UsSecProfile profile
     ) {
         StockFundamentals base = template.fundamentals();
 
-        double resolvedPrice = quote != null && quote.close() > 0
+        double resolvedPrice = longbridge != null && longbridge.lastDone() > 0
+                ? longbridge.lastDone()
+                : quote != null && quote.close() > 0
                 ? quote.close()
                 : template.price();
-        double resolvedMarketCap = resolveUsMarketCap(resolvedPrice, profile, base);
+        double resolvedMarketCap = resolveUsMarketCap(resolvedPrice, longbridge, profile, base);
         double resolvedRevenueGrowth = revenueGrowth(profile, base.revenueGrowth());
         double resolvedFcfMargin = clamp(freeCashFlowMargin(profile, base.fcfMargin()), -0.20, 0.45);
         double resolvedRoe = clamp(orFallback(ratio(profile == null ? null : profile.annualNetIncome(), profile == null ? null : profile.equity()), base.roe()), -0.30, 0.80);
-        double resolvedPe = resolveUsPe(resolvedMarketCap, profile, base.pe());
-        double resolvedPb = clamp(orFallback(ratio(resolvedMarketCap, profile == null ? null : profile.equity()), base.pb()), 0.4, 45.0);
-        double resolvedEvEbitda = resolveUsEvEbitda(resolvedMarketCap, profile, base.evEbitda(), resolvedPe);
+        double resolvedPe = resolveUsPe(resolvedMarketCap, longbridge, profile, base.pe());
+        double resolvedPb = resolveUsPb(resolvedMarketCap, longbridge, profile, base.pb());
+        double resolvedEvEbitda = resolveUsEvEbitda(resolvedMarketCap, longbridge, profile, base.evEbitda(), resolvedPe);
         double resolvedNetCash = clamp(orFallback(netCashToMarketCap(resolvedMarketCap, profile), base.netCashToMarketCap()), -0.45, 0.55);
         double resolvedSbcRatio = clamp(orFallback(ratio(profile == null ? null : profile.stockBasedCompensation(), profile == null ? null : profile.annualRevenue()), base.sbcRatio()), 0.0, 0.18);
+        double resolvedDividendYield = positiveOrDefault(
+                longbridge != null ? longbridge.dividendYield() : null,
+                base.dividendYield()
+        );
 
         double capScore = marketCapScore(resolvedMarketCap > 0 ? resolvedMarketCap : null, base.liquidityScore());
-        double volumeScore = volumeScore(quote == null ? null : quote.volume(), base.liquidityScore());
+        double volumeScore = volumeScore(
+                longbridge != null && longbridge.volume() > 0 ? longbridge.volume() : quote == null ? null : quote.volume(),
+                base.liquidityScore()
+        );
         double resolvedLiquidity = clamp(base.liquidityScore() * 0.25 + capScore * 0.35 + volumeScore * 0.40, 0.18, 0.99);
-        double resolvedVolatility = quote != null
-                ? clamp(base.earningsVolatility() * 0.55 + Math.abs(quote.dailyChange()) * 2.2, 0.08, 0.72)
+        double resolvedDailyChange = longbridge != null && longbridge.changeRate() != 0.0
+                ? longbridge.changeRate()
+                : quote != null ? quote.dailyChange() : 0.0;
+        double resolvedVolatility = (longbridge != null || quote != null)
+                ? clamp(base.earningsVolatility() * 0.55 + Math.abs(resolvedDailyChange) * 2.2, 0.08, 0.72)
                 : base.earningsVolatility();
         double resolvedFreshness = usFreshnessDays(profile, base.dataFreshnessDays());
         double resolvedCompleteness = clamp(
                 profile != null
-                        ? base.dataCompleteness() * 0.25 + profile.dataCompleteness() * 0.75 + (quote != null ? 0.03 : 0.0)
+                        ? base.dataCompleteness() * 0.20 + profile.dataCompleteness() * 0.70 + (longbridge != null || quote != null ? 0.05 : 0.0)
                         : base.dataCompleteness(),
                 0.45,
                 0.98
@@ -388,7 +410,7 @@ public class MarketDataService {
                 resolvedPe,
                 resolvedPb,
                 resolvedEvEbitda,
-                base.dividendYield(),
+                resolvedDividendYield,
                 base.buybackYield(),
                 resolvedNetCash,
                 base.policySensitivity(),
@@ -405,24 +427,31 @@ public class MarketDataService {
                 resolvedPositiveFcf
         );
 
-        String resolvedName = profile != null && profile.companyName() != null && !profile.companyName().isBlank()
+        String resolvedName = longbridge != null && longbridge.companyName() != null && !longbridge.companyName().isBlank()
+                ? longbridge.companyName()
+                : profile != null && profile.companyName() != null && !profile.companyName().isBlank()
                 ? profile.companyName()
                 : template.companyName();
         String resolvedIndustry = profile != null && profile.industry() != null && !profile.industry().isBlank()
                 ? profile.industry()
                 : template.industry();
+        String resolvedCurrency = longbridge != null && longbridge.currency() != null && !longbridge.currency().isBlank()
+                ? longbridge.currency()
+                : "USD";
 
         return new StockSnapshot(
                 Market.US,
-                profile != null && profile.primaryTicker() != null && !profile.primaryTicker().isBlank()
+                longbridge != null && longbridge.ticker() != null && !longbridge.ticker().isBlank()
+                        ? longbridge.ticker()
+                        : profile != null && profile.primaryTicker() != null && !profile.primaryTicker().isBlank()
                         ? profile.primaryTicker()
                         : template.symbol(),
-                "USD",
+                resolvedCurrency,
                 resolvedName,
                 resolvedIndustry,
                 round(resolvedPrice),
                 merged,
-                usDataVersion(template.dataVersion(), quote, profile)
+                usDataVersion(template.dataVersion(), longbridge, quote, profile)
         );
     }
 
@@ -504,6 +533,34 @@ public class MarketDataService {
         return pe <= 0 ? 8.0 : pe * 0.55;
     }
 
+    private double resolveUsMarketCap(
+            double price,
+            UsLongbridgeClient.UsLongbridgeMarketData longbridge,
+            UsSecClient.UsSecProfile profile,
+            StockFundamentals fallback
+    ) {
+        if (longbridge != null && longbridge.totalMarketValue() > 0) {
+            return longbridge.totalMarketValue();
+        }
+        if (profile != null && profile.sharesOutstanding() != null && profile.sharesOutstanding() > 0 && price > 0) {
+            return price * profile.sharesOutstanding();
+        }
+        if (longbridge != null && longbridge.totalShares() > 0 && price > 0) {
+            return price * longbridge.totalShares();
+        }
+        if (profile != null && profile.annualNetIncome() != null && profile.annualNetIncome() > 0) {
+            double targetPe = longbridge != null && longbridge.peTtmRatio() > 0 ? longbridge.peTtmRatio() : fallback.pe();
+            if (targetPe > 0) {
+                return profile.annualNetIncome() * targetPe;
+            }
+        }
+        if (profile != null && profile.annualRevenue() != null && profile.annualRevenue() > 0 && fallback.fcfMargin() > 0.02 && fallback.pe() > 0) {
+            double ownerEarnings = profile.annualRevenue() * fallback.fcfMargin();
+            return ownerEarnings * Math.max(fallback.pe() * 0.85, 10.0);
+        }
+        return 0.0;
+    }
+
     private double resolveUsMarketCap(double price, UsSecClient.UsSecProfile profile, StockFundamentals fallback) {
         if (profile != null && profile.sharesOutstanding() != null && profile.sharesOutstanding() > 0 && price > 0) {
             return price * profile.sharesOutstanding();
@@ -555,6 +612,30 @@ public class MarketDataService {
         return fallback;
     }
 
+    private double resolveUsPe(
+            double marketCap,
+            UsLongbridgeClient.UsLongbridgeMarketData longbridge,
+            UsSecClient.UsSecProfile profile,
+            double fallback
+    ) {
+        if (longbridge != null && longbridge.peTtmRatio() > 0) {
+            return clamp(longbridge.peTtmRatio(), 4.0, 95.0);
+        }
+        return resolveUsPe(marketCap, profile, fallback);
+    }
+
+    private double resolveUsPb(
+            double marketCap,
+            UsLongbridgeClient.UsLongbridgeMarketData longbridge,
+            UsSecClient.UsSecProfile profile,
+            double fallback
+    ) {
+        if (longbridge != null && longbridge.pbRatio() > 0) {
+            return clamp(longbridge.pbRatio(), 0.4, 45.0);
+        }
+        return clamp(orFallback(ratio(marketCap, profile == null ? null : profile.equity()), fallback), 0.4, 45.0);
+    }
+
     private double resolveUsEvEbitda(double marketCap, UsSecClient.UsSecProfile profile, double fallback, double fallbackPe) {
         if (profile != null && profile.ebitdaProxy() != null && profile.ebitdaProxy() > 0 && marketCap > 0) {
             double cash = profile.cash() == null ? 0.0 : profile.cash();
@@ -565,6 +646,19 @@ public class MarketDataService {
             }
         }
         return clamp(fallback * 0.55 + impliedEvEbitda(fallbackPe) * 0.45, 4.0, 40.0);
+    }
+
+    private double resolveUsEvEbitda(
+            double marketCap,
+            UsLongbridgeClient.UsLongbridgeMarketData longbridge,
+            UsSecClient.UsSecProfile profile,
+            double fallback,
+            double fallbackPe
+    ) {
+        double vendorAwareFallback = longbridge != null && longbridge.peTtmRatio() > 0
+                ? clamp(impliedEvEbitda(longbridge.peTtmRatio()), 4.0, 40.0)
+                : fallback;
+        return resolveUsEvEbitda(marketCap, profile, vendorAwareFallback, fallbackPe);
     }
 
     private Double netCashToMarketCap(double marketCap, UsSecClient.UsSecProfile profile) {
@@ -596,10 +690,14 @@ public class MarketDataService {
 
     private String usDataVersion(
             String fallback,
+            UsLongbridgeClient.UsLongbridgeMarketData longbridge,
             UsStooqClient.UsQuote quote,
             UsSecClient.UsSecProfile profile
     ) {
         List<String> versions = new ArrayList<>();
+        if (longbridge != null && longbridge.tradeDate() != null) {
+            versions.add("longbridge:" + longbridge.tradeDate());
+        }
         if (quote != null && quote.tradeDate() != null) {
             versions.add("stooq:" + quote.tradeDate());
         }

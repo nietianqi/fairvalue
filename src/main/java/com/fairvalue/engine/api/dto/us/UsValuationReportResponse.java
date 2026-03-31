@@ -16,6 +16,9 @@ public record UsValuationReportResponse(
         List<UsScenarioOutput> scenarioMatrix,
         UsFairValueRange finalFairValue,
         Map<String, String> actionableFramework,
-        String uncertaintyAndErrorSources
+        String uncertaintyAndErrorSources,
+        UsValuationSummaryResponse summary,
+        UsValuationDecisionResponse decision,
+        UsValuationExplanationResponse explanation
 ) {
 }

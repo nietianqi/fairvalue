@@ -34,6 +34,7 @@ public class UsConfiguredValuationModelsService {
     private final MarketPriceDailyRepository marketPriceDailyRepository;
     private final MarketSnapshotRepository marketSnapshotRepository;
     private final UsSecClient usSecClient;
+    private final UsExternalValuationParameterService usExternalValuationParameterService;
     private final UsRiskMatrixService usRiskMatrixService;
     private final ObjectMapper objectMapper;
 
@@ -47,6 +48,7 @@ public class UsConfiguredValuationModelsService {
             MarketPriceDailyRepository marketPriceDailyRepository,
             MarketSnapshotRepository marketSnapshotRepository,
             UsSecClient usSecClient,
+            UsExternalValuationParameterService usExternalValuationParameterService,
             UsRiskMatrixService usRiskMatrixService,
             ObjectMapper objectMapper
     ) {
@@ -59,6 +61,7 @@ public class UsConfiguredValuationModelsService {
         this.marketPriceDailyRepository = marketPriceDailyRepository;
         this.marketSnapshotRepository = marketSnapshotRepository;
         this.usSecClient = usSecClient;
+        this.usExternalValuationParameterService = usExternalValuationParameterService;
         this.usRiskMatrixService = usRiskMatrixService;
         this.objectMapper = objectMapper;
     }
@@ -92,10 +95,25 @@ public class UsConfiguredValuationModelsService {
                 ? null
                 : financialQualityScoresRepository.findLatestAvailableBySecurityId(securityId).orElse(null);
         UsSecClient.UsSecProfile secProfile = usSecClient.fetchProfile(snapshot.symbol()).orElse(null);
-        UsResolvedValuationConfig config = usValuationConfigService.resolve(
+        UsResolvedValuationConfig baseConfig = usValuationConfigService.resolve(
                 securityId,
                 security == null ? null : security.sectorTemplate(),
                 LocalDate.now()
+        );
+        UsExternalValuationParameterService.ExternalParameterSnapshot externalParameterSnapshot =
+                usExternalValuationParameterService.resolve(snapshot, security);
+        Map<String, Double> numericParameters = new LinkedHashMap<>(baseConfig.numericParameters());
+        numericParameters.putAll(externalParameterSnapshot.parameters());
+        Map<String, String> parameterSources = new LinkedHashMap<>(baseConfig.parameterSources());
+        parameterSources.putAll(externalParameterSnapshot.sources());
+        UsResolvedValuationConfig config = new UsResolvedValuationConfig(
+                baseConfig.sectorTemplate(),
+                baseConfig.primaryMethods(),
+                baseConfig.normalizedWeights(),
+                Map.copyOf(numericParameters),
+                baseConfig.defaultMarginOfSafety(),
+                baseConfig.riskNotes(),
+                Map.copyOf(parameterSources)
         );
 
         return new UsValuationModelContext(
@@ -342,6 +360,13 @@ public class UsConfiguredValuationModelsService {
         assumptions.put("effective_wacc", MathSupport.round(baseInputs.wacc));
         assumptions.put("terminal_growth", MathSupport.round(baseInputs.terminalGrowth));
         assumptions.put("structured_inputs", structured);
+        assumptions.put("parameter_sources", parameterSources(context,
+                Map.entry("wacc_base", "wacc.base"),
+                Map.entry("wacc_rf", "wacc.rf"),
+                Map.entry("wacc_erp", "wacc.erp"),
+                Map.entry("wacc_beta", "wacc.beta"),
+                Map.entry("terminal_growth", "terminal_growth.base")
+        ));
 
         Map<String, Object> sensitivity = new LinkedHashMap<>();
         sensitivity.put("bear_wacc", MathSupport.round(bearInputs.wacc));
@@ -396,6 +421,10 @@ public class UsConfiguredValuationModelsService {
         assumptions.put("target_pe", MathSupport.round(targetPe));
         assumptions.put("component_count", components.size());
         assumptions.put("components", components);
+        assumptions.put("parameter_sources", parameterSources(context,
+                Map.entry("target_ev_ebitda", "relative.target_ev_ebitda"),
+                Map.entry("target_pe", "relative.target_pe")
+        ));
 
         Map<String, Object> sensitivity = new LinkedHashMap<>();
         sensitivity.put("current_ev_ebitda", MathSupport.round(fundamentals.evEbitda()));
@@ -540,6 +569,13 @@ public class UsConfiguredValuationModelsService {
         assumptions.put("terminal_growth", MathSupport.round(baseInputs.terminalGrowth));
         assumptions.put("implied_growth_floor", MathSupport.round(impliedGrowthFloor));
         assumptions.put("implied_growth_ceiling", MathSupport.round(impliedGrowthCeiling));
+        assumptions.put("parameter_sources", parameterSources(context,
+                Map.entry("wacc_base", "wacc.base"),
+                Map.entry("wacc_rf", "wacc.rf"),
+                Map.entry("wacc_erp", "wacc.erp"),
+                Map.entry("wacc_beta", "wacc.beta"),
+                Map.entry("terminal_growth", "terminal_growth.base")
+        ));
 
         Map<String, Object> sensitivity = new LinkedHashMap<>();
         sensitivity.put("implied_revenue_cagr", MathSupport.round(impliedGrowth));
@@ -773,6 +809,22 @@ public class UsConfiguredValuationModelsService {
 
     private double parameter(UsValuationModelContext context, String key, double fallback) {
         return context.config().numericParameters().getOrDefault(key, fallback);
+    }
+
+    private String parameterSource(UsValuationModelContext context, String key) {
+        return context.config().parameterSources().get(key);
+    }
+
+    @SafeVarargs
+    private final Map<String, String> parameterSources(UsValuationModelContext context, Map.Entry<String, String>... aliases) {
+        Map<String, String> sources = new LinkedHashMap<>();
+        for (Map.Entry<String, String> alias : aliases) {
+            String source = parameterSource(context, alias.getValue());
+            if (source != null && !source.isBlank()) {
+                sources.put(alias.getKey(), source);
+            }
+        }
+        return sources;
     }
 
     private double clampWacc(UsValuationModelContext context, double value) {

@@ -9,6 +9,9 @@ public record UsValuationSummaryResponse(
         double confidenceLevel,
         UsFairValueRange buyZone,
         UsFairValueRange holdZone,
-        UsFairValueRange avoidZone
+        UsFairValueRange avoidZone,
+        double currentPrice,
+        String dataVersion,
+        String impliedExpectation
 ) {
 }
