@@ -23,7 +23,6 @@ import com.fairvalue.engine.repository.SourceDocumentRepository;
 import com.fairvalue.engine.repository.SourceRegistryRepository;
 import com.fairvalue.engine.service.MarketDataService;
 import com.fairvalue.engine.service.ValuationService;
-import com.fairvalue.engine.valuation.ModelValuation;
 import com.fairvalue.engine.valuation.ValuationResult;
 import com.fairvalue.engine.valuation.strategy.MathSupport;
 import org.springframework.stereotype.Service;
@@ -43,6 +42,10 @@ public class UsEquityValuationService {
     private final UsSecClient usSecClient;
     private final UsStooqClient usStooqClient;
     private final UsSecurityMasterService usSecurityMasterService;
+    private final UsSecurityClassificationService usSecurityClassificationService;
+    private final UsDataQualityAuditService usDataQualityAuditService;
+    private final UsConfiguredValuationModelsService usConfiguredValuationModelsService;
+    private final UsValuationPersistenceService usValuationPersistenceService;
     private final FinancialDerivedMetricsRepository financialDerivedMetricsRepository;
     private final FinancialQualityScoresRepository financialQualityScoresRepository;
     private final SourceRegistryRepository sourceRegistryRepository;
@@ -55,6 +58,10 @@ public class UsEquityValuationService {
             UsSecClient usSecClient,
             UsStooqClient usStooqClient,
             UsSecurityMasterService usSecurityMasterService,
+            UsSecurityClassificationService usSecurityClassificationService,
+            UsDataQualityAuditService usDataQualityAuditService,
+            UsConfiguredValuationModelsService usConfiguredValuationModelsService,
+            UsValuationPersistenceService usValuationPersistenceService,
             FinancialDerivedMetricsRepository financialDerivedMetricsRepository,
             FinancialQualityScoresRepository financialQualityScoresRepository,
             SourceRegistryRepository sourceRegistryRepository,
@@ -66,6 +73,10 @@ public class UsEquityValuationService {
         this.usSecClient = usSecClient;
         this.usStooqClient = usStooqClient;
         this.usSecurityMasterService = usSecurityMasterService;
+        this.usSecurityClassificationService = usSecurityClassificationService;
+        this.usDataQualityAuditService = usDataQualityAuditService;
+        this.usConfiguredValuationModelsService = usConfiguredValuationModelsService;
+        this.usValuationPersistenceService = usValuationPersistenceService;
         this.financialDerivedMetricsRepository = financialDerivedMetricsRepository;
         this.financialQualityScoresRepository = financialQualityScoresRepository;
         this.sourceRegistryRepository = sourceRegistryRepository;
@@ -76,21 +87,20 @@ public class UsEquityValuationService {
     public UsEquityProfileResponse profile(String ticker) {
         StockSnapshot snapshot = usSnapshot(ticker);
         UsSecClient.UsSecProfile profile = usProfile(ticker);
+        UsSecurityMaster classified = usSecurityClassificationService.ensureClassification(ticker, snapshot, profile);
         double dilutedShares = resolveDilutedShares(snapshot, profile);
         double marketCap = MathSupport.round(snapshot.price() * dilutedShares);
 
         return new UsEquityProfileResponse(
                 snapshot.symbol(),
                 snapshot.companyName(),
-                profile != null && profile.exchange() != null && !profile.exchange().isBlank()
-                        ? profile.exchange()
-                        : inferExchange(snapshot.symbol()),
-                inferSector(snapshot.industry()),
-                snapshot.industry(),
+                firstNonBlank(classified.exchange(), profile == null ? null : profile.exchange(), inferExchange(snapshot.symbol())),
+                firstNonBlank(classified.sector(), inferSector(snapshot.industry())),
+                firstNonBlank(classified.industry(), snapshot.industry()),
                 marketCap,
                 MathSupport.round(dilutedShares),
-                classifyCompany(snapshot),
-                sectorTemplate(snapshot),
+                firstNonBlank(classified.companyType(), classifyCompany(snapshot)),
+                firstNonBlank(classified.sectorTemplate(), sectorTemplate(snapshot)),
                 MathSupport.round(snapshot.fundamentals().pe()),
                 MathSupport.round(snapshot.fundamentals().evEbitda()),
                 MathSupport.round(snapshot.fundamentals().revenueGrowth()),
@@ -99,6 +109,27 @@ public class UsEquityValuationService {
     }
 
     public UsDataQualityResponse dataQuality(String ticker) {
+        String normalizedTicker = normalizeTicker(ticker);
+        try {
+            UsDataQualityAuditRecord audit = usDataQualityAuditService.refreshForTicker(normalizedTicker);
+            return new UsDataQualityResponse(
+                    normalizedTicker,
+                    audit.latest10kDate() == null ? null : audit.latest10kDate().toString(),
+                    audit.latest10qDate() == null ? null : audit.latest10qDate().toString(),
+                    audit.hasRecent8k(),
+                    audit.shareCountVerified(),
+                    audit.sbcQuantified(),
+                    audit.guidanceStatus(),
+                    safe(audit.confidenceLevel()),
+                    parseStringList(audit.missingItemsJson()),
+                    parseStringList(audit.warningFlagsJson())
+            );
+        } catch (Exception ignored) {
+            return heuristicDataQuality(normalizedTicker);
+        }
+    }
+
+    private UsDataQualityResponse heuristicDataQuality(String ticker) {
         StockSnapshot snapshot = usSnapshot(ticker);
         UsSecClient.UsSecProfile profile = usProfile(ticker);
         StockFundamentals f = snapshot.fundamentals();
@@ -270,51 +301,87 @@ public class UsEquityValuationService {
     public UsValuationRunResponse runValuation(String ticker, UsValuationRunRequest request) {
         UsValuationRunRequest effective = normalize(request);
         StockSnapshot snapshot = usSnapshot(ticker);
-        StockFundamentals fundamentals = snapshot.fundamentals();
+        UsSecClient.UsSecProfile profile = usProfile(ticker);
+        UsSecurityMaster classified = usSecurityClassificationService.ensureClassification(ticker, snapshot, profile);
         ValuationResult base = valuationService.valuate(Market.US, ticker);
+        UsConfiguredValuationResult configured = usConfiguredValuationModelsService.evaluate(snapshot, classified, effective.customAssumptions());
 
-        List<ModelValuation> selectedModels = applyMethodSelection(base.models(), effective.forceMethods());
-        List<UsMethodOutput> methodOutputs = selectedModels.stream()
-                .map(model -> methodOutput(model, effective.style()))
+        List<UsConfiguredMethodValuation> selectedMethods = applyMethodSelection(configured.methods(), effective.forceMethods());
+        List<UsMethodOutput> methodOutputs = selectedMethods.stream()
+                .map(method -> methodOutput(method, effective.style()))
                 .toList();
 
-        double blended = selectedModels.stream().mapToDouble(model -> model.value() * model.weight()).sum();
-        blended *= styleBias(effective.style());
-        blended *= assumptionsBias(effective.customAssumptions(), fundamentals);
-
-        double band = MathSupport.clamp(
-                (base.fairValueHigh() - base.fairValueLow()) / (2.0 * Math.max(base.tradableFairValue(), 0.1)) + styleBandBump(effective.style()),
-                0.08,
-                0.35
-        );
-
+        double blendedLow = methodOutputs.stream().mapToDouble(output -> output.bearValue() * output.weight()).sum();
+        double blendedMid = methodOutputs.stream().mapToDouble(output -> output.baseValue() * output.weight()).sum();
+        double blendedHigh = methodOutputs.stream().mapToDouble(output -> output.bullValue() * output.weight()).sum();
         UsFairValueRange range = new UsFairValueRange(
-                MathSupport.round(blended * (1.0 - band)),
-                MathSupport.round(blended),
-                MathSupport.round(blended * (1.0 + band))
+                MathSupport.round(blendedLow),
+                MathSupport.round(blendedMid),
+                MathSupport.round(blendedHigh)
         );
 
-        List<UsRiskItem> riskMatrix = riskMatrix(snapshot, base);
-        List<UsScenarioOutput> scenarioMatrix = scenarioMatrix(base, range, riskMatrix);
+        UsRiskMatrixResult riskMatrixResult = configured.riskMatrixResult();
+        List<UsRiskItem> riskMatrix = riskMatrixResult.items();
+        double effectiveConfidence = MathSupport.round(MathSupport.clamp(
+                Math.min(base.confidence(), configured.confidenceBase()),
+                0.35,
+                0.95
+        ));
+        List<UsScenarioOutput> scenarioMatrix = scenarioMatrix(base, range, effectiveConfidence, riskMatrixResult);
 
-        double marginOfSafety = MathSupport.round((range.mid() - base.price()) / Math.max(range.mid(), 0.1));
-        String impliedExpectation = impliedExpectationLabel(fundamentals);
+        double rawMarginOfSafety = (range.mid() - base.price()) / Math.max(range.mid(), 0.1);
+        double marginOfSafety = MathSupport.round(rawMarginOfSafety - configured.requiredMarginOfSafety());
+        String impliedExpectation = configured.reverseDcfAnalysis().impliedExpectationLabel();
 
         Map<String, String> explanationBlocks = new LinkedHashMap<>();
         explanationBlocks.put("one_line_verdict", verdict(base));
-        explanationBlocks.put("executive_summary", "Multi-method US valuation combines DCF, reverse DCF, relative multiples and historical anchors.");
-        explanationBlocks.put("model_selection", "At least 3 methods are kept; default uses 5 methods for cross-validation.");
-        explanationBlocks.put("risk_commentary", "Risk matrix adjusts bear/base/bull probabilities and narrows confidence under elevated uncertainty.");
+        explanationBlocks.put("executive_summary", "Multi-method US valuation combines configurable FCFF, reverse DCF, relative multiples, and historical anchors.");
+        explanationBlocks.put("model_selection", configured.modelSelectionReason());
+        explanationBlocks.put("reverse_dcf", "Reverse DCF implied expectation=" + impliedExpectation + ", notes=" + configured.reverseDcfAnalysis().notesJson());
+        explanationBlocks.put("risk_commentary", "Risk matrix adjusted WACC by "
+                + MathSupport.round(riskMatrixResult.waccAdjustment())
+                + ", required margin of safety by "
+                + MathSupport.round(riskMatrixResult.marginOfSafetyAdjustment())
+                + ", and shifted bear/bull probabilities by "
+                + MathSupport.round(riskMatrixResult.bearProbabilityDelta())
+                + "/"
+                + MathSupport.round(riskMatrixResult.bullProbabilityDelta())
+                + ".");
+        explanationBlocks.put("margin_of_safety", "Raw margin="
+                + MathSupport.round(rawMarginOfSafety)
+                + ", required margin="
+                + MathSupport.round(configured.requiredMarginOfSafety())
+                + ", effective margin="
+                + marginOfSafety);
         explanationBlocks.put("style_horizon", "Style=" + effective.style() + ", Horizon=" + effective.horizon() + ", Consensus=" + effective.useConsensus());
+
+        usValuationPersistenceService.persistRun(
+                ticker,
+                effective,
+                snapshot,
+                base,
+                selectedMethods,
+                methodOutputs,
+                scenarioMatrix,
+                riskMatrix,
+                explanationBlocks,
+                range,
+                range.mid(),
+                effectiveConfidence,
+                marginOfSafety,
+                configured.reverseDcfAnalysis(),
+                verdict(base),
+                classified
+        );
 
         return new UsValuationRunResponse(
                 snapshot.symbol(),
-                selectedModels.stream().map(ModelValuation::name).toList(),
+                selectedMethods.stream().map(UsConfiguredMethodValuation::method).toList(),
                 methodOutputs,
                 scenarioMatrix,
-                MathSupport.round(blended),
+                range.mid(),
                 range,
-                base.confidence(),
+                effectiveConfidence,
                 marginOfSafety,
                 impliedExpectation,
                 riskMatrix,
@@ -419,155 +486,111 @@ public class UsEquityValuationService {
         );
     }
 
-    private List<UsScenarioOutput> scenarioMatrix(ValuationResult base, UsFairValueRange range, List<UsRiskItem> risks) {
-        long highHighCount = risks.stream()
-                .filter(item -> "High".equals(item.probability()) && "High".equals(item.impact()))
-                .count();
-
-        double bear = MathSupport.clamp(0.26 + highHighCount * 0.05, 0.22, 0.45);
-        double bull = MathSupport.clamp(0.20 - highHighCount * 0.03 + base.confidence() * 0.04, 0.12, 0.30);
-        double baseProb = MathSupport.round(1.0 - bear - bull);
+    private List<UsScenarioOutput> scenarioMatrix(
+            ValuationResult base,
+            UsFairValueRange range,
+            double effectiveConfidence,
+            UsRiskMatrixResult riskMatrixResult
+    ) {
+        double bear = MathSupport.clamp(
+                0.24 + riskMatrixResult.bearProbabilityDelta() + (1.0 - effectiveConfidence) * 0.05,
+                0.18,
+                0.55
+        );
+        double bull = MathSupport.clamp(
+                0.18 + riskMatrixResult.bullProbabilityDelta() + effectiveConfidence * 0.03,
+                0.08,
+                0.30
+        );
+        if (riskMatrixResult.valueTrapFlag()) {
+            bear = MathSupport.clamp(bear + 0.03, 0.18, 0.58);
+            bull = MathSupport.clamp(bull - 0.02, 0.06, 0.30);
+        }
+        double baseProb = MathSupport.round(Math.max(1.0 - bear - bull, 0.18));
+        double normalizedTotal = bear + bull + baseProb;
+        bear = MathSupport.round(bear / normalizedTotal);
+        bull = MathSupport.round(bull / normalizedTotal);
+        baseProb = MathSupport.round(1.0 - bear - bull);
 
         return List.of(
-                new UsScenarioOutput("bear", MathSupport.round(bear), range.low(), MathSupport.round(range.low() * 0.90), MathSupport.round(range.low() * 1.08), MathSupport.round(range.low() / base.price() - 1.0)),
-                new UsScenarioOutput("base", MathSupport.round(baseProb), range.mid(), range.low(), range.high(), MathSupport.round(range.mid() / base.price() - 1.0)),
-                new UsScenarioOutput("bull", MathSupport.round(bull), range.high(), MathSupport.round(range.mid() * 0.95), MathSupport.round(range.high() * 1.12), MathSupport.round(range.high() / base.price() - 1.0))
+                new UsScenarioOutput("bear", bear, range.low(), MathSupport.round(range.low() * 0.90), MathSupport.round(range.low() * 1.08), MathSupport.round(range.low() / base.price() - 1.0)),
+                new UsScenarioOutput("base", baseProb, range.mid(), range.low(), range.high(), MathSupport.round(range.mid() / base.price() - 1.0)),
+                new UsScenarioOutput("bull", bull, range.high(), MathSupport.round(range.mid() * 0.95), MathSupport.round(range.high() * 1.12), MathSupport.round(range.high() / base.price() - 1.0))
         );
     }
 
-    private List<UsRiskItem> riskMatrix(StockSnapshot snapshot, ValuationResult base) {
-        StockFundamentals f = snapshot.fundamentals();
-        List<UsRiskItem> items = new ArrayList<>();
-
-        items.add(new UsRiskItem(
-                "earnings_miss",
-                labelByThreshold(f.earningsVolatility(), 0.40, 0.28),
-                labelByThreshold(f.earningsVolatility(), 0.42, 0.30),
-                MathSupport.round(-MathSupport.clamp(f.earningsVolatility() * 0.05, 0.01, 0.05)),
-                "Higher earnings volatility can expand downside valuation tails."
-        ));
-
-        items.add(new UsRiskItem(
-                "multiple_compression",
-                labelByThreshold(f.pe(), 35.0, 26.0),
-                labelByThreshold(f.pe(), 38.0, 28.0),
-                MathSupport.round(-MathSupport.clamp((f.pe() - 22.0) / 500.0, 0.01, 0.06)),
-                "Elevated valuation multiple raises de-rating risk if growth slows."
-        ));
-
-        items.add(new UsRiskItem(
-                "dilution",
-                labelByThreshold(f.sbcRatio(), 0.08, 0.045),
-                labelByThreshold(f.sbcRatio(), 0.09, 0.05),
-                MathSupport.round(-MathSupport.clamp(f.sbcRatio() * 0.40, 0.00, 0.04)),
-                "SBC dilution can erode per-share intrinsic value realization."
-        ));
-
-        if (f.netCashToMarketCap() < -0.15) {
-            items.add(new UsRiskItem(
-                    "balance_sheet_stress",
-                    "Medium",
-                    "High",
-                    -0.03,
-                    "Net debt pressure can reduce downside protection in weak cycles."
-            ));
-        }
-
-        if (base.confidence() < 0.60) {
-            items.add(new UsRiskItem(
-                    "data_quality_uncertainty",
-                    "Medium",
-                    "Medium",
-                    -0.02,
-                    "Lower confidence implies higher model uncertainty and wider fair value distribution."
-            ));
-        }
-
-        return items;
-    }
-
-    private UsMethodOutput methodOutput(ModelValuation model, String style) {
-        double styleTilt = switch (style.toLowerCase(Locale.ROOT)) {
-            case "conservative" -> -0.03;
-            case "aggressive" -> 0.03;
-            default -> 0.0;
+    private UsMethodOutput methodOutput(UsConfiguredMethodValuation method, String style) {
+        double styleFactor = switch (style.toLowerCase(Locale.ROOT)) {
+            case "conservative" -> 0.97;
+            case "aggressive" -> 1.03;
+            default -> 1.0;
         };
-
-        double base = model.value() * (1.0 + styleTilt);
         return new UsMethodOutput(
-                model.name(),
-                MathSupport.round(base * 0.88),
-                MathSupport.round(base),
-                MathSupport.round(base * 1.12),
-                model.weight(),
-                model.rationale()
+                method.method(),
+                MathSupport.round(method.bearValue() * styleFactor),
+                MathSupport.round(method.baseValue() * styleFactor),
+                MathSupport.round(method.bullValue() * styleFactor),
+                method.weight(),
+                method.rationale()
         );
     }
 
-    private List<ModelValuation> applyMethodSelection(List<ModelValuation> models, List<String> forceMethods) {
+    private List<UsConfiguredMethodValuation> applyMethodSelection(List<UsConfiguredMethodValuation> methods, List<String> forceMethods) {
         if (forceMethods == null || forceMethods.isEmpty()) {
-            return models;
+            return normalizeMethodWeights(methods);
         }
 
-        Set<String> target = forceMethods.stream().map(value -> value.toLowerCase(Locale.ROOT)).collect(java.util.stream.Collectors.toSet());
-        List<ModelValuation> filtered = models.stream()
-                .filter(model -> target.contains(model.name().toLowerCase(Locale.ROOT)))
+        Set<String> target = forceMethods.stream()
+                .map(value -> value.toLowerCase(Locale.ROOT))
+                .collect(java.util.stream.Collectors.toSet());
+        target.add("reverse_dcf");
+
+        List<UsConfiguredMethodValuation> filtered = methods.stream()
+                .filter(method -> target.contains(method.method().toLowerCase(Locale.ROOT)))
                 .toList();
 
         if (filtered.size() < 3) {
-            return models;
+            return normalizeMethodWeights(methods);
         }
 
-        double weightSum = filtered.stream().mapToDouble(ModelValuation::weight).sum();
+        return normalizeMethodWeights(filtered);
+    }
+
+    private List<UsConfiguredMethodValuation> normalizeMethodWeights(List<UsConfiguredMethodValuation> methods) {
+        double weightSum = methods.stream().mapToDouble(UsConfiguredMethodValuation::weight).sum();
         if (weightSum <= 0.0) {
-            return models;
+            double equalWeight = 1.0 / Math.max(methods.size(), 1);
+            return methods.stream()
+                    .map(method -> new UsConfiguredMethodValuation(
+                            method.method(),
+                            method.bearValue(),
+                            method.baseValue(),
+                            method.bullValue(),
+                            MathSupport.round(equalWeight),
+                            method.rationale(),
+                            method.inputSnapshotDate(),
+                            method.primaryMethod(),
+                            method.assumptionsJson(),
+                            method.sensitivityJson(),
+                            method.notes()
+                    ))
+                    .toList();
         }
-
-        return filtered.stream()
-                .map(model -> new ModelValuation(model.name(), model.value(), MathSupport.round(model.weight() / weightSum), model.rationale()))
+        return methods.stream()
+                .map(method -> new UsConfiguredMethodValuation(
+                        method.method(),
+                        method.bearValue(),
+                        method.baseValue(),
+                        method.bullValue(),
+                        MathSupport.round(method.weight() / weightSum),
+                        method.rationale(),
+                        method.inputSnapshotDate(),
+                        method.primaryMethod(),
+                        method.assumptionsJson(),
+                        method.sensitivityJson(),
+                        method.notes()
+                ))
                 .toList();
-    }
-
-    private double styleBias(String style) {
-        return switch (style.toLowerCase(Locale.ROOT)) {
-            case "conservative" -> 0.96;
-            case "aggressive" -> 1.04;
-            default -> 1.0;
-        };
-    }
-
-    private double styleBandBump(String style) {
-        return switch (style.toLowerCase(Locale.ROOT)) {
-            case "conservative" -> 0.02;
-            case "aggressive" -> 0.01;
-            default -> 0.0;
-        };
-    }
-
-    private double assumptionsBias(Map<String, Double> customAssumptions, StockFundamentals fundamentals) {
-        if (customAssumptions == null || customAssumptions.isEmpty()) {
-            return 1.0;
-        }
-
-        double bias = 0.0;
-        if (customAssumptions.containsKey("wacc")) {
-            bias += (fundamentals.wacc() - customAssumptions.get("wacc")) * 2.0;
-        }
-        if (customAssumptions.containsKey("terminal_growth")) {
-            bias += (customAssumptions.get("terminal_growth") - fundamentals.terminalGrowth()) * 1.2;
-        }
-
-        return MathSupport.clamp(1.0 + bias, 0.75, 1.25);
-    }
-
-    private String impliedExpectationLabel(StockFundamentals f) {
-        if (f.pe() > 35.0 && f.revenueGrowth() < 0.15) {
-            return "aggressive";
-        }
-        if (f.pe() < 18.0 && f.revenueGrowth() > 0.08) {
-            return "conservative";
-        }
-        return "balanced";
     }
 
     private String verdict(ValuationResult base) {
@@ -689,6 +712,22 @@ public class UsEquityValuationService {
     private long resolveSecurityId(String rawTicker) {
         return usSecurityMasterService.resolveSecurityId(rawTicker)
                 .orElseThrow(() -> new IllegalStateException("Ticker " + rawTicker + " does not exist in security master."));
+    }
+
+    private String normalizeTicker(String rawTicker) {
+        return rawTicker.trim()
+                .toUpperCase(Locale.ROOT)
+                .replace(".US", "")
+                .replace(".", "-");
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private List<String> parseStringList(String rawJson) {

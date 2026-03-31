@@ -7,7 +7,9 @@ import org.springframework.stereotype.Repository;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public class SourceDocumentRepository {
@@ -200,7 +202,7 @@ public class SourceDocumentRepository {
             long securityId,
             long sourceId,
             List<String> documentTypes,
-            java.time.LocalDate minFilingDate
+            LocalDate minFilingDate
     ) {
         if (documentTypes == null || documentTypes.isEmpty()) {
             return false;
@@ -222,6 +224,84 @@ public class SourceDocumentRepository {
                 .query(Boolean.class)
                 .single();
         return Boolean.TRUE.equals(exists);
+    }
+
+    public boolean existsRecentBySecurityIdAndDocumentTypes(
+            long securityId,
+            List<String> documentTypes,
+            LocalDate minFilingDate
+    ) {
+        if (documentTypes == null || documentTypes.isEmpty()) {
+            return false;
+        }
+        Boolean exists = jdbcClient.sql("""
+                        SELECT EXISTS(
+                            SELECT 1
+                            FROM fairvalue.source_documents
+                            WHERE security_id = :securityId
+                              AND document_type IN (:documentTypes)
+                              AND filing_date >= :minFilingDate
+                        )
+                        """)
+                .param("securityId", securityId)
+                .param("documentTypes", documentTypes)
+                .param("minFilingDate", minFilingDate)
+                .query(Boolean.class)
+                .single();
+        return Boolean.TRUE.equals(exists);
+    }
+
+    public boolean existsRecentBySecurityIdAndSourceIdAndTitleKeywords(
+            long securityId,
+            long sourceId,
+            List<String> titleKeywords,
+            LocalDate minFilingDate
+    ) {
+        if (titleKeywords == null || titleKeywords.isEmpty()) {
+            return false;
+        }
+        StringBuilder sql = new StringBuilder("""
+                        SELECT EXISTS(
+                            SELECT 1
+                            FROM fairvalue.source_documents
+                            WHERE security_id = :securityId
+                              AND source_id = :sourceId
+                              AND filing_date >= :minFilingDate
+                              AND (
+                        """);
+        for (int i = 0; i < titleKeywords.size(); i += 1) {
+            if (i > 0) {
+                sql.append(" OR ");
+            }
+            sql.append("LOWER(COALESCE(document_title, '')) LIKE :keyword").append(i);
+        }
+        sql.append("))");
+
+        JdbcClient.StatementSpec spec = jdbcClient.sql(sql.toString())
+                .param("securityId", securityId)
+                .param("sourceId", sourceId)
+                .param("minFilingDate", minFilingDate);
+        for (int i = 0; i < titleKeywords.size(); i += 1) {
+            spec.param("keyword" + i, "%" + titleKeywords.get(i).toLowerCase() + "%");
+        }
+        Boolean exists = spec.query(Boolean.class).single();
+        return Boolean.TRUE.equals(exists);
+    }
+
+    public Optional<LocalDate> findLatestFilingDateBySecurityIdAndDocumentTypes(long securityId, List<String> documentTypes) {
+        if (documentTypes == null || documentTypes.isEmpty()) {
+            return Optional.empty();
+        }
+        return jdbcClient.sql("""
+                        SELECT MAX(filing_date)
+                        FROM fairvalue.source_documents
+                        WHERE security_id = :securityId
+                          AND document_type IN (:documentTypes)
+                        """)
+                .param("securityId", securityId)
+                .param("documentTypes", documentTypes)
+                .query(LocalDate.class)
+                .optional();
     }
 
     public List<UsSourceDocument> findLatestBySecurityId(long securityId, int limit) {

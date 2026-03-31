@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fairvalue.engine.us.UsCompanyIrClient;
 import com.fairvalue.engine.us.UsSecClient;
 import com.fairvalue.engine.us.UsSecurityMasterService;
+import com.fairvalue.engine.us.UsStooqClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +47,9 @@ class UsEquityAdminControllerTest {
     @MockBean
     private UsCompanyIrClient usCompanyIrClient;
 
+    @MockBean
+    private UsStooqClient usStooqClient;
+
     private long aaplSecurityId;
 
     @BeforeEach
@@ -58,6 +62,21 @@ class UsEquityAdminControllerTest {
                 .param("securityId", aaplSecurityId)
                 .update();
         jdbcClient.sql("DELETE FROM fairvalue.financial_quality_scores WHERE security_id = :securityId")
+                .param("securityId", aaplSecurityId)
+                .update();
+        jdbcClient.sql("DELETE FROM fairvalue.data_quality_audit WHERE security_id = :securityId")
+                .param("securityId", aaplSecurityId)
+                .update();
+        jdbcClient.sql("DELETE FROM fairvalue.market_intraday_snapshot WHERE security_id = :securityId")
+                .param("securityId", aaplSecurityId)
+                .update();
+        jdbcClient.sql("DELETE FROM fairvalue.market_snapshot WHERE security_id = :securityId")
+                .param("securityId", aaplSecurityId)
+                .update();
+        jdbcClient.sql("DELETE FROM fairvalue.market_price_daily WHERE security_id = :securityId")
+                .param("securityId", aaplSecurityId)
+                .update();
+        jdbcClient.sql("DELETE FROM fairvalue.market_data_raw WHERE security_id = :securityId")
                 .param("securityId", aaplSecurityId)
                 .update();
         jdbcClient.sql("DELETE FROM fairvalue.source_document_facts_raw WHERE security_id = :securityId")
@@ -166,10 +185,12 @@ class UsEquityAdminControllerTest {
                 .andExpect(jsonPath("$.financial_standardized_count").value(5))
                 .andExpect(jsonPath("$.financial_derived_metric_count").value(5))
                 .andExpect(jsonPath("$.financial_quality_score_count").value(5))
+                .andExpect(jsonPath("$.data_quality_audit_count").value(1))
                 .andExpect(jsonPath("$.latest_documents[0].document_type").value("10-Q"))
                 .andExpect(jsonPath("$.latest_financial_standardized[0].period_type").value("Q"))
                 .andExpect(jsonPath("$.latest_financial_derived_metrics[0].period_type").value("Q"))
-                .andExpect(jsonPath("$.latest_financial_quality_scores[0].period_type").value("Q"));
+                .andExpect(jsonPath("$.latest_financial_quality_scores[0].period_type").value("Q"))
+                .andExpect(jsonPath("$.latest_data_quality_audits[0].guidance_status").value("filings_only"));
     }
 
     @Test
@@ -198,6 +219,50 @@ class UsEquityAdminControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.company_ir_document_count").value(1))
                 .andExpect(jsonPath("$.latest_company_ir_documents[0].document_type").value("EARNINGS_RELEASE"));
+    }
+
+    @Test
+    void shouldTriggerMarketSyncAndPersistMarketTables() throws Exception {
+        when(usStooqClient.fetchQuote("AAPL")).thenReturn(Optional.of(new UsStooqClient.UsQuote(
+                "AAPL",
+                java.time.LocalDate.of(2026, 3, 31),
+                243.00,
+                247.00,
+                242.50,
+                246.50,
+                244.00,
+                123456789L
+        )));
+        when(usSecClient.fetchProfile("AAPL")).thenReturn(Optional.of(new UsSecClient.UsSecProfile(
+                "AAPL",
+                "Apple Inc.",
+                "NASDAQ",
+                "AAPL",
+                "Electronic Computers",
+                java.time.LocalDate.of(2025, 11, 1),
+                java.time.LocalDate.of(2026, 2, 1),
+                false,
+                14600000000.0,
+                400000000000.0,
+                380000000000.0,
+                110000000000.0,
+                120000000000.0,
+                25000000000.0,
+                60000000000.0,
+                100000000000.0,
+                70000000000.0,
+                135000000000.0,
+                12000000000.0,
+                0.92
+        )));
+
+        mockMvc.perform(post("/v1/us-equities-admin/AAPL/market-sync"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ticker").value("AAPL"))
+                .andExpect(jsonPath("$.market_data_raw_count").value(1))
+                .andExpect(jsonPath("$.market_price_daily_count").value(1))
+                .andExpect(jsonPath("$.market_snapshot_count").value(1))
+                .andExpect(jsonPath("$.market_intraday_snapshot_count").value(1));
     }
 
     private void insertQuarterDocument(

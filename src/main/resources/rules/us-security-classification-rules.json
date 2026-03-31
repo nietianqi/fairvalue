@@ -1,0 +1,108 @@
+{
+  "default_sector": "General",
+  "default_company_type": "general_quality",
+  "default_sector_template": "us_general_quality",
+  "sector_aliases": [
+    {
+      "sector": "Technology",
+      "keywords": ["technology", "software", "internet", "computer", "semiconductor", "communication equipment", "consumer electronics", "electronic computers"]
+    },
+    {
+      "sector": "Financials",
+      "keywords": ["financial", "bank", "insurance", "asset management", "capital markets", "payment", "card services"]
+    },
+    {
+      "sector": "Healthcare",
+      "keywords": ["health", "medical", "pharma", "pharmaceutical", "biotech", "life sciences"]
+    },
+    {
+      "sector": "Real Estate",
+      "keywords": ["reit", "real estate", "property"]
+    },
+    {
+      "sector": "Consumer",
+      "keywords": ["consumer", "retail", "restaurant", "apparel", "hotel", "travel", "discretionary", "staples"]
+    },
+    {
+      "sector": "Energy",
+      "keywords": ["energy", "oil", "gas", "exploration", "petroleum"]
+    },
+    {
+      "sector": "Industrials",
+      "keywords": ["industrial", "aerospace", "defense", "machinery", "transportation", "railroad", "logistics"]
+    }
+  ],
+  "rules": [
+    {
+      "id": "reit",
+      "priority": 110,
+      "company_type": "reit",
+      "sector_template": "us_reit",
+      "industry_keywords": ["reit", "real estate investment trust", "real estate"]
+    },
+    {
+      "id": "bank",
+      "priority": 105,
+      "company_type": "bank",
+      "sector_template": "us_bank",
+      "industry_keywords": ["bank", "banks"],
+      "sector_keywords": ["financials"]
+    },
+    {
+      "id": "financial_quality",
+      "priority": 100,
+      "company_type": "financial_quality",
+      "sector_template": "us_financial_quality",
+      "industry_keywords": ["insurance", "asset management", "capital markets", "payment", "card services", "brokerage"],
+      "sector_keywords": ["financials"]
+    },
+    {
+      "id": "biotech",
+      "priority": 95,
+      "company_type": "biotech",
+      "sector_template": "us_biotech",
+      "industry_keywords": ["biotech", "biotechnology", "drug", "therapeutics"]
+    },
+    {
+      "id": "hypergrowth_saas",
+      "priority": 90,
+      "company_type": "hypergrowth_saas",
+      "sector_template": "us_hypergrowth_saas",
+      "industry_keywords": ["software", "cloud", "internet", "platform", "saas"],
+      "revenue_growth_min": 0.18,
+      "fcf_margin_max": 0.16
+    },
+    {
+      "id": "compounder",
+      "priority": 80,
+      "company_type": "compounder",
+      "sector_template": "us_tech_compounder",
+      "industry_keywords": ["technology", "software", "internet", "computer", "consumer electronics", "semiconductor"],
+      "revenue_growth_min": 0.08,
+      "fcf_margin_min": 0.15,
+      "roe_min": 0.12
+    },
+    {
+      "id": "income_defensive",
+      "priority": 70,
+      "company_type": "income_defensive",
+      "sector_template": "us_general_quality",
+      "dividend_yield_min": 0.025,
+      "revenue_growth_max": 0.08
+    },
+    {
+      "id": "cyclical",
+      "priority": 60,
+      "company_type": "cyclical",
+      "sector_template": "us_cyclical",
+      "sector_keywords": ["industrials", "energy", "consumer", "materials"],
+      "earnings_volatility_min": 0.15
+    },
+    {
+      "id": "general_quality",
+      "priority": 10,
+      "company_type": "general_quality",
+      "sector_template": "us_general_quality"
+    }
+  ]
+}

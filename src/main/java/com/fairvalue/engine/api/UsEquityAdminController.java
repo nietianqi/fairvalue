@@ -1,5 +1,7 @@
 package com.fairvalue.engine.api;
 
+import com.fairvalue.engine.domain.Market;
+import com.fairvalue.engine.service.MarketDataService;
 import com.fairvalue.engine.us.UsEquityAdminOverviewService;
 import com.fairvalue.engine.us.UsCompanyIrSyncService;
 import com.fairvalue.engine.us.UsFinancialStandardizationService;
@@ -19,19 +21,22 @@ public class UsEquityAdminController {
     private final UsCompanyIrSyncService usCompanyIrSyncService;
     private final UsFinancialStandardizationService usFinancialStandardizationService;
     private final UsEquityAdminOverviewService usEquityAdminOverviewService;
+    private final MarketDataService marketDataService;
 
     public UsEquityAdminController(
             UsUniverseSyncService usUniverseSyncService,
             UsSecDocumentSyncService usSecDocumentSyncService,
             UsCompanyIrSyncService usCompanyIrSyncService,
             UsFinancialStandardizationService usFinancialStandardizationService,
-            UsEquityAdminOverviewService usEquityAdminOverviewService
+            UsEquityAdminOverviewService usEquityAdminOverviewService,
+            MarketDataService marketDataService
     ) {
         this.usUniverseSyncService = usUniverseSyncService;
         this.usSecDocumentSyncService = usSecDocumentSyncService;
         this.usCompanyIrSyncService = usCompanyIrSyncService;
         this.usFinancialStandardizationService = usFinancialStandardizationService;
         this.usEquityAdminOverviewService = usEquityAdminOverviewService;
+        this.marketDataService = marketDataService;
     }
 
     @GetMapping("/{ticker}/overview")
@@ -52,6 +57,12 @@ public class UsEquityAdminController {
     @PostMapping("/{ticker}/ir-sync")
     public UsCompanyIrSyncService.CompanyIrSyncSummary syncCompanyIr(@PathVariable String ticker) {
         return usCompanyIrSyncService.syncTicker(ticker);
+    }
+
+    @PostMapping("/{ticker}/market-sync")
+    public UsEquityAdminOverviewService.AdminOverview syncMarket(@PathVariable String ticker) {
+        marketDataService.getSnapshot(Market.US, ticker);
+        return usEquityAdminOverviewService.overview(ticker);
     }
 
     @PostMapping("/{ticker}/standardize")

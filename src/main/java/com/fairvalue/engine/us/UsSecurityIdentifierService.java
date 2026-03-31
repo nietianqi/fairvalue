@@ -10,6 +10,7 @@ public class UsSecurityIdentifierService {
     public static final String SEC_EDGAR = "sec_edgar";
     public static final String COMPANY_IR = "company_ir";
     public static final String LONGBRIDGE_API = "longbridge_api";
+    public static final String STOOQ = "stooq";
 
     private final SecurityIdentifierMapRepository repository;
 

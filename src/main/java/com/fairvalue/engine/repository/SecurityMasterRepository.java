@@ -39,6 +39,29 @@ public class SecurityMasterRepository {
                 .optional();
     }
 
+    public Optional<UsSecurityMaster> findById(long id) {
+        return jdbcClient.sql("""
+                        SELECT id,
+                               ticker,
+                               symbol_full,
+                               company_name,
+                               exchange,
+                               currency,
+                               sector,
+                               industry,
+                               subindustry,
+                               company_type,
+                               sector_template,
+                               country,
+                               is_active
+                        FROM fairvalue.security_master
+                        WHERE id = :id
+                        """)
+                .param("id", id)
+                .query(this::mapRow)
+                .optional();
+    }
+
     public long insert(UsSecurityMaster security) {
         return jdbcClient.sql("""
                         INSERT INTO fairvalue.security_master (

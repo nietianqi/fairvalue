@@ -50,6 +50,17 @@ public class UsSecurityMasterService {
                 ));
     }
 
+    public Optional<UsSecurityMaster> findByTicker(String rawTicker) {
+        if (rawTicker == null || rawTicker.isBlank()) {
+            return Optional.empty();
+        }
+        return securityMasterRepository.findByTicker(normalizeTicker(rawTicker));
+    }
+
+    public Optional<UsSecurityMaster> findById(long securityId) {
+        return securityMasterRepository.findById(securityId);
+    }
+
     public UpsertOutcome upsertFromSecTicker(UsSecClient.SecTickerInfo tickerInfo) {
         String ticker = normalizeTicker(tickerInfo.ticker());
         String cik = normalizeCik(String.valueOf(tickerInfo.cik()));

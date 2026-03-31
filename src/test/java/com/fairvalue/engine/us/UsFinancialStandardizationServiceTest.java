@@ -48,6 +48,9 @@ class UsFinancialStandardizationServiceTest {
         jdbcClient.sql("DELETE FROM fairvalue.financial_quality_scores WHERE security_id = :securityId")
                 .param("securityId", aaplSecurityId)
                 .update();
+        jdbcClient.sql("DELETE FROM fairvalue.data_quality_audit WHERE security_id = :securityId")
+                .param("securityId", aaplSecurityId)
+                .update();
         jdbcClient.sql("DELETE FROM fairvalue.source_document_facts_raw WHERE security_id = :securityId")
                 .param("securityId", aaplSecurityId)
                 .update();
@@ -150,6 +153,24 @@ class UsFinancialStandardizationServiceTest {
                 .param("securityId", aaplSecurityId)
                 .query(BigDecimal.class)
                 .single();
+        Long auditCount = jdbcClient.sql("""
+                        SELECT COUNT(*)
+                        FROM fairvalue.data_quality_audit
+                        WHERE security_id = :securityId
+                        """)
+                .param("securityId", aaplSecurityId)
+                .query(Long.class)
+                .single();
+        String guidanceStatus = jdbcClient.sql("""
+                        SELECT guidance_status
+                        FROM fairvalue.data_quality_audit
+                        WHERE security_id = :securityId
+                        ORDER BY audit_date DESC
+                        LIMIT 1
+                        """)
+                .param("securityId", aaplSecurityId)
+                .query(String.class)
+                .single();
 
         assertThat(storedCount).isEqualTo(5);
         assertThat(ttmRevenue).isEqualByComparingTo("460");
@@ -158,6 +179,8 @@ class UsFinancialStandardizationServiceTest {
         assertThat(derivedRoiC).isNotNull();
         assertThat(derivedBookValuePerShare).isEqualByComparingTo("2.300000");
         assertThat(totalQualityScore).isNotNull();
+        assertThat(auditCount).isEqualTo(1);
+        assertThat(guidanceStatus).isEqualTo("filings_only");
     }
 
     @Test

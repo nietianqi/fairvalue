@@ -142,7 +142,7 @@
 
         .metrics {
             display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-template-columns: repeat(5, minmax(0, 1fr));
             gap: 12px;
             margin-top: 18px;
         }
@@ -255,7 +255,7 @@
     <section class="hero">
         <div class="eyebrow">Fairvalue Engine Ops</div>
         <h1>US Equity Admin Console</h1>
-        <p>这个页面专门给我们做美股数据运维：同步 SEC universe、单票拉取 submissions 和 companyfacts、执行标准化，并直接查看 PostgreSQL 里的落库计数和样本明细。</p>
+                <p>这个页面专门给我们做美股数据运维：同步 SEC universe、单票拉取 submissions 和 companyfacts、执行标准化、刷新 data quality audit，并直接查看 PostgreSQL 里的落库计数和样本明细。</p>
     </section>
 
     <section class="grid">
@@ -268,6 +268,7 @@
                 </div>
                 <div class="button-row">
                     <button class="primary" id="overviewBtn">刷新概览</button>
+                    <button class="secondary" id="marketSyncBtn">Market Sync</button>
                     <button class="secondary" id="secSyncBtn">SEC Sync</button>
                     <button class="secondary" id="irSyncBtn">IR Sync</button>
                     <button class="warm" id="standardizeBtn">Standardize</button>
@@ -301,7 +302,29 @@
                     <span>Quality Scores</span>
                     <strong id="qualityCount">-</strong>
                 </div>
+                <div class="metric">
+                    <span>Data Quality Audits</span>
+                    <strong id="auditCount">-</strong>
+                </div>
+                <div class="metric">
+                    <span>Market Raw</span>
+                    <strong id="marketRawCount">-</strong>
+                </div>
+                <div class="metric">
+                    <span>Market Daily</span>
+                    <strong id="marketDailyCount">-</strong>
+                </div>
+                <div class="metric">
+                    <span>Market Snapshots</span>
+                    <strong id="marketSnapshotCount">-</strong>
+                </div>
+                <div class="metric">
+                    <span>Intraday Snapshots</span>
+                    <strong id="marketIntradayCount">-</strong>
+                </div>
             </div>
+
+            <div class="small-note" id="classificationLine">分类: -</div>
 
             <div class="tables">
                 <div class="table-card">
@@ -327,6 +350,10 @@
                 <div class="table-card">
                     <div class="table-head">Latest Financial Quality Scores</div>
                     <div id="qualityTable"></div>
+                </div>
+                <div class="table-card">
+                    <div class="table-head">Latest Data Quality Audits</div>
+                    <div id="auditTable"></div>
                 </div>
             </div>
         </div>
@@ -355,12 +382,19 @@
     const stdCount = document.getElementById("stdCount");
     const derivedCount = document.getElementById("derivedCount");
     const qualityCount = document.getElementById("qualityCount");
+    const auditCount = document.getElementById("auditCount");
+    const marketRawCount = document.getElementById("marketRawCount");
+    const marketDailyCount = document.getElementById("marketDailyCount");
+    const marketSnapshotCount = document.getElementById("marketSnapshotCount");
+    const marketIntradayCount = document.getElementById("marketIntradayCount");
+    const classificationLine = document.getElementById("classificationLine");
     const documentsTable = document.getElementById("documentsTable");
     const companyIrTable = document.getElementById("companyIrTable");
     const rawFactsTable = document.getElementById("rawFactsTable");
     const standardizedTable = document.getElementById("standardizedTable");
     const derivedTable = document.getElementById("derivedTable");
     const qualityTable = document.getElementById("qualityTable");
+    const auditTable = document.getElementById("auditTable");
     const buttons = Array.from(document.querySelectorAll("button"));
 
     function ticker() {
@@ -421,6 +455,12 @@
         stdCount.textContent = payload.financial_standardized_count;
         derivedCount.textContent = payload.financial_derived_metric_count;
         qualityCount.textContent = payload.financial_quality_score_count;
+        auditCount.textContent = payload.data_quality_audit_count;
+        marketRawCount.textContent = payload.market_data_raw_count;
+        marketDailyCount.textContent = payload.market_price_daily_count;
+        marketSnapshotCount.textContent = payload.market_snapshot_count;
+        marketIntradayCount.textContent = payload.market_intraday_snapshot_count;
+        classificationLine.textContent = `分类: ${payload.company_type || "-"} | 模板: ${payload.sector_template || "-"} | 行业: ${payload.industry || "-"}`;
 
         renderTable(documentsTable, [
             { key: "document_type", label: "Type" },
@@ -472,9 +512,21 @@
             { key: "capital_efficiency_score", label: "Capital Efficiency" },
             { key: "total_quality_score", label: "Total" }
         ], payload.latest_financial_quality_scores);
+
+        renderTable(auditTable, [
+            { key: "audit_date", label: "Audit Date" },
+            { key: "latest_10k_date", label: "Latest 10-K" },
+            { key: "latest_10q_date", label: "Latest 10-Q" },
+            { key: "guidance_status", label: "Guidance" },
+            { key: "confidence_level", label: "Confidence" }
+        ], payload.latest_data_quality_audits);
     }
 
     document.getElementById("overviewBtn").addEventListener("click", refreshOverview);
+    document.getElementById("marketSyncBtn").addEventListener("click", async () => {
+        await callApi(`/v1/us-equities-admin/${ticker()}/market-sync`, { method: "POST" });
+        await refreshOverview();
+    });
     document.getElementById("secSyncBtn").addEventListener("click", async () => {
         await callApi(`/v1/us-equities-admin/${ticker()}/sec-sync`, { method: "POST" });
         await refreshOverview();

@@ -121,6 +121,7 @@ public class UsFinancialStandardizationService {
     private final FinancialDerivedMetricsRepository financialDerivedMetricsRepository;
     private final UsFinancialDerivedMetricsService usFinancialDerivedMetricsService;
     private final UsFinancialQualityScoringService usFinancialQualityScoringService;
+    private final UsDataQualityAuditService usDataQualityAuditService;
     private final ObjectMapper objectMapper;
 
     public UsFinancialStandardizationService(
@@ -130,6 +131,7 @@ public class UsFinancialStandardizationService {
             FinancialDerivedMetricsRepository financialDerivedMetricsRepository,
             UsFinancialDerivedMetricsService usFinancialDerivedMetricsService,
             UsFinancialQualityScoringService usFinancialQualityScoringService,
+            UsDataQualityAuditService usDataQualityAuditService,
             ObjectMapper objectMapper
     ) {
         this.usSecurityMasterService = usSecurityMasterService;
@@ -138,6 +140,7 @@ public class UsFinancialStandardizationService {
         this.financialDerivedMetricsRepository = financialDerivedMetricsRepository;
         this.usFinancialDerivedMetricsService = usFinancialDerivedMetricsService;
         this.usFinancialQualityScoringService = usFinancialQualityScoringService;
+        this.usDataQualityAuditService = usDataQualityAuditService;
         this.objectMapper = objectMapper;
     }
 
@@ -159,6 +162,7 @@ public class UsFinancialStandardizationService {
                 rows,
                 financialDerivedMetricsRepository.findBySecurityId(securityId)
         );
+        usDataQualityAuditService.refreshForTicker(ticker);
 
         long fyCount = rows.stream().filter(row -> "FY".equals(row.periodType())).count();
         long quarterCount = rows.stream().filter(row -> "Q".equals(row.periodType())).count();

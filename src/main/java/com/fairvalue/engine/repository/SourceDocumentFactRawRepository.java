@@ -101,6 +101,54 @@ public class SourceDocumentFactRawRepository {
                 .list();
     }
 
+    public boolean existsBySecurityIdAndConceptNames(long securityId, List<String> conceptNames) {
+        if (conceptNames == null || conceptNames.isEmpty()) {
+            return false;
+        }
+        Boolean exists = jdbcClient.sql("""
+                        SELECT EXISTS(
+                            SELECT 1
+                            FROM fairvalue.source_document_facts_raw
+                            WHERE security_id = :securityId
+                              AND concept_name IN (:conceptNames)
+                        )
+                        """)
+                .param("securityId", securityId)
+                .param("conceptNames", conceptNames)
+                .query(Boolean.class)
+                .single();
+        return Boolean.TRUE.equals(exists);
+    }
+
+    public boolean existsBySecurityIdAndConceptKeywords(long securityId, List<String> keywords) {
+        if (keywords == null || keywords.isEmpty()) {
+            return false;
+        }
+
+        StringBuilder sql = new StringBuilder("""
+                        SELECT EXISTS(
+                            SELECT 1
+                            FROM fairvalue.source_document_facts_raw
+                            WHERE security_id = :securityId
+                              AND (
+                        """);
+        for (int i = 0; i < keywords.size(); i += 1) {
+            if (i > 0) {
+                sql.append(" OR ");
+            }
+            sql.append("LOWER(concept_name) LIKE :keyword").append(i);
+        }
+        sql.append("))");
+
+        JdbcClient.StatementSpec spec = jdbcClient.sql(sql.toString())
+                .param("securityId", securityId);
+        for (int i = 0; i < keywords.size(); i += 1) {
+            spec.param("keyword" + i, "%" + keywords.get(i).toLowerCase() + "%");
+        }
+        Boolean exists = spec.query(Boolean.class).single();
+        return Boolean.TRUE.equals(exists);
+    }
+
     public void replaceBySecurityId(long securityId, List<UsSourceDocumentRawFact> facts) {
         jdbcTemplate.update("DELETE FROM fairvalue.source_document_facts_raw WHERE security_id = ?", securityId);
         if (facts.isEmpty()) {
