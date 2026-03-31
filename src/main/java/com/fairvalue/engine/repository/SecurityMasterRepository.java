@@ -1,11 +1,14 @@
 package com.fairvalue.engine.repository;
 
 import com.fairvalue.engine.us.UsSecurityMaster;
+import com.fairvalue.engine.us.UsRelativePeerComparable;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -145,6 +148,93 @@ public class SecurityMasterRepository {
                 .update();
     }
 
+    public List<UsRelativePeerComparable> findRelativePeers(
+            long securityId,
+            String sector,
+            String industry,
+            String companyType,
+            String sectorTemplate,
+            int limit
+    ) {
+        return jdbcClient.sql("""
+                        SELECT sm.id,
+                               sm.ticker,
+                               sm.company_name,
+                               sm.sector,
+                               sm.industry,
+                               sm.company_type,
+                               sm.sector_template,
+                               ms.last_price,
+                               ms.market_cap_vendor,
+                               ms.pe_ttm_vendor,
+                               ms.pb_vendor,
+                               fd.roic,
+                               fd.fcf_margin,
+                               fs.ebitda,
+                               fs.net_debt
+                        FROM fairvalue.security_master sm
+                        LEFT JOIN LATERAL (
+                            SELECT last_price,
+                                   market_cap_vendor,
+                                   pe_ttm_vendor,
+                                   pb_vendor
+                            FROM fairvalue.market_snapshot
+                            WHERE security_id = sm.id
+                            ORDER BY snapshot_time DESC
+                            LIMIT 1
+                        ) ms ON TRUE
+                        LEFT JOIN LATERAL (
+                            SELECT roic,
+                                   fcf_margin
+                            FROM fairvalue.financial_derived_metrics
+                            WHERE security_id = sm.id
+                            ORDER BY period_end DESC, period_type
+                            LIMIT 1
+                        ) fd ON TRUE
+                        LEFT JOIN LATERAL (
+                            SELECT ebitda,
+                                   net_debt
+                            FROM fairvalue.financial_standardized
+                            WHERE security_id = sm.id
+                            ORDER BY period_end DESC,
+                                     CASE period_type
+                                         WHEN 'TTM' THEN 1
+                                         WHEN 'FY' THEN 2
+                                         ELSE 3
+                                     END
+                            LIMIT 1
+                        ) fs ON TRUE
+                        WHERE sm.id <> :securityId
+                          AND sm.country = 'US'
+                          AND sm.is_active = TRUE
+                          AND ms.last_price IS NOT NULL
+                          AND (
+                                (:industry IS NOT NULL AND sm.industry = :industry)
+                             OR (:sectorTemplate IS NOT NULL AND sm.sector_template = :sectorTemplate)
+                             OR (:companyType IS NOT NULL AND sm.company_type = :companyType)
+                             OR (:sector IS NOT NULL AND sm.sector = :sector)
+                          )
+                        ORDER BY CASE
+                                     WHEN :industry IS NOT NULL AND sm.industry = :industry THEN 1
+                                     WHEN :sectorTemplate IS NOT NULL AND sm.sector_template = :sectorTemplate THEN 2
+                                     WHEN :companyType IS NOT NULL AND sm.company_type = :companyType THEN 3
+                                     WHEN :sector IS NOT NULL AND sm.sector = :sector THEN 4
+                                     ELSE 5
+                                 END,
+                                 ms.market_cap_vendor DESC NULLS LAST,
+                                 sm.ticker
+                        LIMIT :limit
+                        """)
+                .param("securityId", securityId)
+                .param("sector", blankToNull(sector))
+                .param("industry", blankToNull(industry))
+                .param("companyType", blankToNull(companyType))
+                .param("sectorTemplate", blankToNull(sectorTemplate))
+                .param("limit", limit)
+                .query(this::mapRelativePeer)
+                .list();
+    }
+
     private UsSecurityMaster mapRow(ResultSet rs, int rowNum) throws SQLException {
         return new UsSecurityMaster(
                 rs.getLong("id"),
@@ -161,5 +251,29 @@ public class SecurityMasterRepository {
                 rs.getString("country"),
                 rs.getBoolean("is_active")
         );
+    }
+
+    private UsRelativePeerComparable mapRelativePeer(ResultSet rs, int rowNum) throws SQLException {
+        return new UsRelativePeerComparable(
+                rs.getLong("id"),
+                rs.getString("ticker"),
+                rs.getString("company_name"),
+                rs.getString("sector"),
+                rs.getString("industry"),
+                rs.getString("company_type"),
+                rs.getString("sector_template"),
+                rs.getBigDecimal("last_price"),
+                rs.getBigDecimal("market_cap_vendor"),
+                rs.getBigDecimal("pe_ttm_vendor"),
+                rs.getBigDecimal("pb_vendor"),
+                rs.getBigDecimal("roic"),
+                rs.getBigDecimal("fcf_margin"),
+                rs.getBigDecimal("ebitda"),
+                rs.getBigDecimal("net_debt")
+        );
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 }

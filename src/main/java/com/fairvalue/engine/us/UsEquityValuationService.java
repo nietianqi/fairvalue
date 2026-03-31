@@ -716,6 +716,10 @@ public class UsEquityValuationService {
         attribution.put("guidance_status", dataQuality.guidanceStatus());
 
         Map<String, String> parameterSources = new LinkedHashMap<>();
+        List<String> peerSetTickers = new ArrayList<>();
+        String peerSetSource = null;
+        String peerSelectionBasis = null;
+        String relativeSourceMode = null;
         for (UsConfiguredMethodValuation method : selectedMethods) {
             if (method.assumptionsJson() == null || method.assumptionsJson().isBlank()) {
                 continue;
@@ -730,12 +734,48 @@ public class UsEquityValuationService {
                         }
                     }
                 }
+                Object rawPeerTickers = assumptions.get("peer_set_tickers");
+                if (rawPeerTickers instanceof List<?> peerTickerList) {
+                    for (Object value : peerTickerList) {
+                        if (value != null) {
+                            String ticker = value.toString();
+                            if (!ticker.isBlank() && !peerSetTickers.contains(ticker)) {
+                                peerSetTickers.add(ticker);
+                            }
+                        }
+                    }
+                }
+                if (peerSetSource == null && assumptions.get("peer_set_source") != null) {
+                    peerSetSource = assumptions.get("peer_set_source").toString();
+                }
+                if (peerSelectionBasis == null && assumptions.get("peer_selection_basis") != null) {
+                    peerSelectionBasis = assumptions.get("peer_selection_basis").toString();
+                }
+                if (relativeSourceMode == null && assumptions.get("relative_source_mode") != null) {
+                    relativeSourceMode = assumptions.get("relative_source_mode").toString();
+                }
             } catch (Exception ignored) {
                 // Keep source attribution best-effort; it must not break valuation output.
             }
         }
         attribution.put("parameter_sources", parameterSources);
         attribution.put("macro_sources", parameterSources.values().stream().distinct().toList());
+        attribution.put("risk_free_rate_source", parameterSources.get("wacc_rf"));
+        attribution.put("erp_source", parameterSources.get("wacc_erp"));
+        attribution.put("beta_source", parameterSources.get("wacc_beta"));
+        attribution.put("industry_multiple_source", firstNonBlank(
+                parameterSources.get("target_ev_ebitda"),
+                parameterSources.get("target_pe")
+        ));
+        attribution.put("target_multiple_sources", Map.of(
+                "target_ev_ebitda", parameterSources.get("target_ev_ebitda"),
+                "target_pe", parameterSources.get("target_pe")
+        ));
+        attribution.put("market_multiple_source", "market_snapshot");
+        attribution.put("peer_set_source", peerSetSource);
+        attribution.put("peer_selection_basis", peerSelectionBasis);
+        attribution.put("relative_source_mode", relativeSourceMode);
+        attribution.put("peer_set_tickers", peerSetTickers);
         return attribution;
     }
 

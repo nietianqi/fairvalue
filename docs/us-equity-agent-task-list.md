@@ -2,7 +2,7 @@
 
 更新日期：2026-03-31  
 当前分支：`codex/java-backend-foundation`  
-上一稳定提交：`6fc492a`  
+上一稳定提交：`6de2770`  
 当前状态说明：本文件反映仓库当前美股代码基线；`Longbridge` 已完成一轮真实 live 验证，`Summary / Decision / Explanation` 三层结构已落地；仓库中仍存在与 CN/JP/前端有关的未整理本地改动。  
 终版对齐说明：任务优先级已按 [美股估值系统_完整终版方案_v2.docx](F:/fairvalue/美股估值系统_完整终版方案_v2.docx) 和 [us-equity-final-plan-v2-alignment.md](F:/fairvalue/docs/us-equity-final-plan-v2-alignment.md) 重新理解。
 
@@ -36,7 +36,7 @@
 | US-11 | 派生指标引擎 | 已完成 | `ROIC / FCF margin / accruals / leverage / book value per share` 已落库。 |
 | US-12 | 数据质量审计引擎 | 已完成 | `data_quality_audit` 已正式落库，`data-quality` 接口优先读取审计表。 |
 | US-13 | company_type / sector_template 选择器 | 已完成 | 已配置化并写回 `security_master`；`AAPL` 在当前真实规则下会落到 `general_quality / us_general_quality`。 |
-| US-14 | Relative Valuation | 已完成 | 已正式聚合为 `relative_valuation` 并落到 `valuation_method_results`。 |
+| US-14 | Relative Valuation | 进行中 | 已正式聚合为 `relative_valuation` 并落到 `valuation_method_results`；当前已升级到 `peer_set + template fallback`，但 peer set 过滤规则还需继续收紧。 |
 | US-15 | Historical Multiple | 进行中 | 已接到 `market_price_daily + market_snapshot`，并写入 `valuation_method_results`；当前历史样本仍偏稀疏，属于 PRD 的最小落地版。 |
 | US-16 | DCF / FCFF | 已完成 | 已升级成 `sector_template_config + valuation_parameter_set` 驱动的可配置 FCFF 模型，并支持 `custom_assumptions` 覆盖。 |
 | US-17 | Reverse DCF | 已完成 | 已升级成独立可解释引擎，支持隐含增长求解、`reverse_dcf_results` 落库和 explanation block 输出。 |
@@ -69,9 +69,10 @@
    - `decision`
    - `explanation`
 10. `explanation` 现已固定输出 12 个 blocks，并带 `key / title / display_order`。
+11. `Relative Valuation` 当前已接入 `peer_set_source / peer_selection_basis / peer_set_tickers / industry_multiple_source / target_multiple_sources`。
 
 ## 5. 当前最顺的下一步
 
-1. 继续补 `MSFT / NVDA` 的 Longbridge live 验证，并比较 `market_*` 入库结果与 `summary/run/report` 归因输出。
+1. 继续收紧 `Relative Valuation peer set` 的准入规则，让 peer 选择从“可用样本优先”升级到“质量过滤优先”。
 2. 继续补 `AAPL` 这类 case 的标准化财务覆盖，让 `financial_standardized / derived_metrics` 更完整，而不只是依赖 `SEC profile` 托底。
 3. `US-22 / US-23`：继续把 `Summary / Decision / Explanation` 三层里的 source attribution、macro source、peer set 解释补齐到终版结构。

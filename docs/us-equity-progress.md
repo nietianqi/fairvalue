@@ -2,8 +2,8 @@
 
 更新日期：2026-03-31  
 当前分支：`codex/java-backend-foundation`  
-上一稳定提交：`6fc492a`  
-当前本地状态：`US-19 / AAPL FCFF 覆盖补强` 已提交；`Longbridge + FRED + Damodaran` 接入与 `Summary / Decision / Explanation` 三层输出已在本地落地并通过测试，已完成一轮真实 live 验证；仓库中仍存在与 CN/JP/前端有关的未整理本地改动。  
+上一稳定提交：`6de2770`  
+当前本地状态：`Longbridge + FRED + Damodaran` 接入与 `Summary / Decision / Explanation` 三层输出已推送；本轮继续完成了 `AAPL / MSFT / NVDA` 的 Longbridge live 验证，以及 `Relative Valuation peer set + source attribution` 字段补强；仓库中仍存在与 CN/JP/前端有关的未整理本地改动。  
 终版对齐说明：当前进度需结合 [美股估值系统_完整终版方案_v2.docx](F:/fairvalue/美股估值系统_完整终版方案_v2.docx) 和 [us-equity-final-plan-v2-alignment.md](F:/fairvalue/docs/us-equity-final-plan-v2-alignment.md) 一起阅读。
 
 ## 1. 当前运行状态
@@ -73,7 +73,7 @@
    - SDK 已接入：`io.github.longbridge:openapi-sdk:4.0.0`
    - 代码已接到 `MarketDataService -> UsMarketDataPersistenceService`
    - 默认通过环境变量开关启用，不在仓库中硬编码密钥
-   - 2026-03-31 已完成真实 live 验证：`AAPL market-sync` 后 `market_price_daily_count = 255`
+   - 2026-03-31 已完成真实 live 验证：`AAPL / MSFT / NVDA` 的 `price_source` 均已显示 `longbridge:2026-03-30`
 2. `FRED`
    - 已支持官方 API
    - 已支持 `fredgraph.csv` fallback
@@ -264,13 +264,13 @@
 2. `FRED` 代码链路已接通，当前网络对 `fredgraph.csv` 会超时；客户端已做快速失败和回退，但本轮还没有拿到稳定的 FRED live 数值进入 `parameter_sources`。
 3. `Damodaran` 已真实参与 `beta / relative multiple` 参数归因，但 `wacc.rf / wacc.erp` 在本轮 AAPL 输出中还没有稳定压过库内种子参数。
 4. `US-15` 虽已接上 `market_*` 表，但当前 `MSFT / NVDA` 的历史市场样本仍偏少，`Historical Multiple` 仍属于 `sparse` 状态。
-5. `Relative Valuation` 当前已支持 Damodaran 行业目标倍数覆盖，但还不是完整 peer set 引擎。
+5. `Relative Valuation` 当前已升级到 `peer set + template fallback`，但 peer set 规则仍偏宽，还不是终版严格筛选器。
 6. `AAPL` 当前仍落在 `income_defensive / us_general_quality`，是否调回 `compounder / us_tech_compounder` 需要继续校准规则阈值。
 7. `Summary / Decision / Explanation` 三层已经可用，12 个固定 explanation blocks 也已落地，但文案粒度和 PRD 终版措辞还值得继续打磨。
 8. 工作区是 dirty 的，包含大量本轮之外的未提交文件，后续提交时必须只挑相关文件，不能整体提交或回滚。
 
 ## 7. 推荐下一步
 
-1. 继续做 `AAPL / MSFT / NVDA` 三只的整套 Longbridge live 验证，并补一份稳定的横向对比 handoff。
+1. 继续收紧 `Relative Valuation peer set` 的准入规则，让 peer 选择从“可用样本优先”升级到“质量过滤优先”。
 2. 继续补 `AAPL` 这类 case 的标准化财务覆盖，让 `financial_standardized / financial_derived_metrics` 比 `SEC profile` fallback 更完整。
 3. 继续把 `Relative Valuation peer set`、`FRED 稳定参数源` 和 `Summary / Decision / Explanation` 文案层补齐成终版结构。

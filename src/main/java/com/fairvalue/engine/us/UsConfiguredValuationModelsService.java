@@ -395,32 +395,77 @@ public class UsConfiguredValuationModelsService {
     ) {
         StockSnapshot snapshot = context.snapshot();
         StockFundamentals fundamentals = snapshot.fundamentals();
+        List<UsRelativePeerComparable> peers = context.securityId() <= 0
+                ? List.of()
+                : usSecurityMasterService.findRelativePeers(context.securityId(), context.security(), 8);
+        List<String> peerTickers = peers.stream()
+                .map(UsRelativePeerComparable::ticker)
+                .toList();
+        Double peerMedianEvEbitda = median(peers.stream()
+                .map(this::peerEvEbitda)
+                .filter(value -> value != null && value > 0.0)
+                .toList());
+        Double peerMedianPe = median(peers.stream()
+                .map(UsRelativePeerComparable::peTtm)
+                .filter(value -> value != null && value.doubleValue() > 0.0)
+                .map(BigDecimal::doubleValue)
+                .toList());
+        Double peerMedianPb = median(peers.stream()
+                .map(UsRelativePeerComparable::pb)
+                .filter(value -> value != null && value.doubleValue() > 0.0)
+                .map(BigDecimal::doubleValue)
+                .toList());
+        double effectiveTargetEvEbitda = peerMedianEvEbitda == null ? targetEvEbitda : peerMedianEvEbitda;
+        double effectiveTargetPe = peerMedianPe == null ? targetPe : peerMedianPe;
+
         List<Double> anchors = new ArrayList<>();
         Map<String, Double> components = new LinkedHashMap<>();
 
-        if (fundamentals.evEbitda() > 0.0 && targetEvEbitda > 0.0) {
-            double factor = MathSupport.clamp(targetEvEbitda / fundamentals.evEbitda(), 0.70, 1.40);
+        if (fundamentals.evEbitda() > 0.0 && effectiveTargetEvEbitda > 0.0) {
+            double factor = MathSupport.clamp(effectiveTargetEvEbitda / fundamentals.evEbitda(), 0.70, 1.40);
             anchors.add(factor);
             components.put("ev_ebitda_factor", MathSupport.round(factor));
         }
-        if (fundamentals.pe() > 0.0 && targetPe > 0.0) {
-            double factor = MathSupport.clamp(targetPe / fundamentals.pe(), 0.70, 1.35);
+        if (fundamentals.pe() > 0.0 && effectiveTargetPe > 0.0) {
+            double factor = MathSupport.clamp(effectiveTargetPe / fundamentals.pe(), 0.70, 1.35);
             anchors.add(factor);
             components.put("pe_factor", MathSupport.round(factor));
+        }
+        if (fundamentals.pb() > 0.0 && peerMedianPb != null && peerMedianPb > 0.0) {
+            double factor = MathSupport.clamp(peerMedianPb / fundamentals.pb(), 0.75, 1.30);
+            anchors.add(factor);
+            components.put("pb_factor", MathSupport.round(factor));
         }
 
         double anchor = anchors.isEmpty()
                 ? 1.0
                 : anchors.stream().mapToDouble(Double::doubleValue).average().orElse(1.0);
         double baseValue = snapshot.price() * anchor;
-        double band = anchors.size() >= 2 ? 0.10 : 0.14;
+        double band = anchors.size() >= 3 ? 0.08 : anchors.size() >= 2 ? 0.10 : peers.isEmpty() ? 0.14 : 0.12;
 
         Map<String, Object> assumptions = new LinkedHashMap<>();
-        assumptions.put("source_tables", List.of("market_snapshot", "financial_derived_metrics"));
-        assumptions.put("target_ev_ebitda", MathSupport.round(targetEvEbitda));
-        assumptions.put("target_pe", MathSupport.round(targetPe));
+        assumptions.put("source_tables", List.of(
+                "security_master",
+                "market_snapshot",
+                "financial_standardized",
+                "financial_derived_metrics"
+        ));
+        assumptions.put("configured_target_ev_ebitda", MathSupport.round(targetEvEbitda));
+        assumptions.put("configured_target_pe", MathSupport.round(targetPe));
+        assumptions.put("effective_target_ev_ebitda", MathSupport.round(effectiveTargetEvEbitda));
+        assumptions.put("effective_target_pe", MathSupport.round(effectiveTargetPe));
+        assumptions.put("peer_target_ev_ebitda", peerMedianEvEbitda == null ? null : MathSupport.round(peerMedianEvEbitda));
+        assumptions.put("peer_target_pe", peerMedianPe == null ? null : MathSupport.round(peerMedianPe));
+        assumptions.put("peer_target_pb", peerMedianPb == null ? null : MathSupport.round(peerMedianPb));
+        assumptions.put("effective_target_ev_ebitda_source", peerMedianEvEbitda == null ? "configured_template" : "peer_set");
+        assumptions.put("effective_target_pe_source", peerMedianPe == null ? "configured_template" : "peer_set");
         assumptions.put("component_count", components.size());
         assumptions.put("components", components);
+        assumptions.put("peer_set_size", peers.size());
+        assumptions.put("peer_set_tickers", peerTickers);
+        assumptions.put("peer_selection_basis", peerSelectionBasis(context, peers));
+        assumptions.put("peer_set_source", "security_master+market_snapshot+financial_standardized+financial_derived_metrics");
+        assumptions.put("relative_source_mode", peers.isEmpty() ? "template_only" : "peer_set_plus_template");
         assumptions.put("parameter_sources", parameterSources(context,
                 Map.entry("target_ev_ebitda", "relative.target_ev_ebitda"),
                 Map.entry("target_pe", "relative.target_pe")
@@ -429,19 +474,26 @@ public class UsConfiguredValuationModelsService {
         Map<String, Object> sensitivity = new LinkedHashMap<>();
         sensitivity.put("current_ev_ebitda", MathSupport.round(fundamentals.evEbitda()));
         sensitivity.put("current_pe", MathSupport.round(fundamentals.pe()));
+        sensitivity.put("current_pb", MathSupport.round(fundamentals.pb()));
         sensitivity.put("anchor_factor", MathSupport.round(anchor));
+        sensitivity.put("peer_set_size", peers.size());
+        sensitivity.put("peer_median_ev_ebitda", peerMedianEvEbitda == null ? null : MathSupport.round(peerMedianEvEbitda));
+        sensitivity.put("peer_median_pe", peerMedianPe == null ? null : MathSupport.round(peerMedianPe));
+        sensitivity.put("peer_median_pb", peerMedianPb == null ? null : MathSupport.round(peerMedianPb));
 
         return new ValuationScenario(
                 baseValue * (1.0 - band),
                 baseValue,
                 baseValue * (1.0 + band),
-                "Relative valuation cross-checks current market multiples against template targets calibrated by sector template.",
+                "Relative valuation cross-checks current market multiples against persisted peer-set medians, with configured template targets kept as fallback anchors.",
                 latestMarketDate(context),
                 toJson(assumptions),
                 toJson(sensitivity),
                 anchors.isEmpty()
-                        ? "No clean vendor multiple series was available; relative valuation defaulted to price-neutral anchor."
-                        : "Relative valuation aggregated " + components.size() + " configured market anchors."
+                        ? "No clean peer or vendor multiple series was available; relative valuation defaulted to price-neutral anchor."
+                        : peers.isEmpty()
+                        ? "Peer set is not yet available for this ticker; relative valuation used configured template targets only."
+                        : "Relative valuation used peer set tickers=" + peerTickers + " with " + components.size() + " market anchors."
         );
     }
 
@@ -813,6 +865,38 @@ public class UsConfiguredValuationModelsService {
 
     private String parameterSource(UsValuationModelContext context, String key) {
         return context.config().parameterSources().get(key);
+    }
+
+    private Double peerEvEbitda(UsRelativePeerComparable peer) {
+        double marketCap = decimalValue(peer.marketCap());
+        double ebitda = decimalValue(peer.ebitda());
+        if (marketCap <= 0.0 || ebitda <= 0.0) {
+            return null;
+        }
+        return (marketCap + decimalValue(peer.netDebt())) / ebitda;
+    }
+
+    private String peerSelectionBasis(UsValuationModelContext context, List<UsRelativePeerComparable> peers) {
+        if (peers.isEmpty() || context.security() == null) {
+            return "template_only";
+        }
+        String industry = context.security().industry();
+        if (industry != null && peers.stream().anyMatch(peer -> industry.equalsIgnoreCase(peer.industry()))) {
+            return "industry";
+        }
+        String sectorTemplate = context.security().sectorTemplate();
+        if (sectorTemplate != null && peers.stream().anyMatch(peer -> sectorTemplate.equalsIgnoreCase(peer.sectorTemplate()))) {
+            return "sector_template";
+        }
+        String companyType = context.security().companyType();
+        if (companyType != null && peers.stream().anyMatch(peer -> companyType.equalsIgnoreCase(peer.companyType()))) {
+            return "company_type";
+        }
+        String sector = context.security().sector();
+        if (sector != null && peers.stream().anyMatch(peer -> sector.equalsIgnoreCase(peer.sector()))) {
+            return "sector";
+        }
+        return "template_only";
     }
 
     @SafeVarargs

@@ -3,6 +3,7 @@ package com.fairvalue.engine.us;
 import com.fairvalue.engine.repository.SecurityMasterRepository;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
@@ -59,6 +60,20 @@ public class UsSecurityMasterService {
 
     public Optional<UsSecurityMaster> findById(long securityId) {
         return securityMasterRepository.findById(securityId);
+    }
+
+    public List<UsRelativePeerComparable> findRelativePeers(long securityId, UsSecurityMaster security, int limit) {
+        if (security == null) {
+            return List.of();
+        }
+        return securityMasterRepository.findRelativePeers(
+                securityId,
+                security.sector(),
+                security.industry(),
+                security.companyType(),
+                security.sectorTemplate(),
+                limit
+        );
     }
 
     public UpsertOutcome upsertFromSecTicker(UsSecClient.SecTickerInfo tickerInfo) {
