@@ -1,0 +1,453 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>US Equity Admin Console</title>
+    <style>
+        :root {
+            --bg: #f4efe6;
+            --panel: rgba(255, 252, 246, 0.88);
+            --panel-strong: #fffaf0;
+            --line: rgba(63, 51, 33, 0.14);
+            --text: #1b2533;
+            --muted: #6d7683;
+            --accent: #0d6f63;
+            --accent-soft: #d8efe9;
+            --warm: #c96d2d;
+            --danger: #a93d30;
+            --shadow: 0 18px 40px rgba(48, 42, 32, 0.12);
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: "Space Grotesk", "Noto Sans SC", "Segoe UI", sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(13, 111, 99, 0.18), transparent 32%),
+                radial-gradient(circle at top right, rgba(201, 109, 45, 0.18), transparent 28%),
+                linear-gradient(180deg, #f9f5ed 0%, #f0ebe1 100%);
+            min-height: 100vh;
+        }
+
+        .shell {
+            width: min(1240px, calc(100% - 32px));
+            margin: 32px auto 48px;
+        }
+
+        .hero, .panel {
+            background: var(--panel);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--line);
+            border-radius: 24px;
+            box-shadow: var(--shadow);
+        }
+
+        .hero {
+            padding: 28px 28px 24px;
+            margin-bottom: 20px;
+        }
+
+        .eyebrow {
+            font-size: 12px;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        h1 {
+            margin: 10px 0 8px;
+            font-size: clamp(30px, 4vw, 46px);
+            line-height: 1.05;
+        }
+
+        .hero p {
+            margin: 0;
+            color: var(--muted);
+            max-width: 860px;
+            font-size: 15px;
+            line-height: 1.7;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            gap: 20px;
+        }
+
+        .panel {
+            padding: 22px;
+        }
+
+        .panel h2 {
+            margin: 0 0 16px;
+            font-size: 22px;
+        }
+
+        .controls {
+            display: grid;
+            gap: 14px;
+        }
+
+        .ticker-row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .ticker-row label {
+            font-size: 13px;
+            color: var(--muted);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .ticker-row input {
+            min-width: 220px;
+            padding: 14px 16px;
+            border-radius: 14px;
+            border: 1px solid var(--line);
+            background: var(--panel-strong);
+            font: inherit;
+            color: var(--text);
+        }
+
+        .button-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        button {
+            border: 0;
+            border-radius: 14px;
+            padding: 13px 18px;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.18s ease, opacity 0.18s ease;
+        }
+
+        button:hover { transform: translateY(-1px); }
+        button:disabled { opacity: 0.6; cursor: wait; transform: none; }
+
+        .primary { background: var(--accent); color: white; }
+        .secondary { background: var(--accent-soft); color: var(--accent); }
+        .warm { background: #ffe6d3; color: var(--warm); }
+        .ghost { background: #eef1f4; color: var(--text); }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 18px;
+        }
+
+        .metric {
+            padding: 16px;
+            border-radius: 18px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(247,243,235,0.92));
+            border: 1px solid var(--line);
+        }
+
+        .metric span {
+            display: block;
+            font-size: 12px;
+            color: var(--muted);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .metric strong {
+            font-size: 28px;
+            line-height: 1;
+        }
+
+        .status {
+            margin-top: 16px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: #eef9f7;
+            color: var(--accent);
+            font-size: 14px;
+            min-height: 46px;
+            display: flex;
+            align-items: center;
+        }
+
+        .status.error {
+            background: #fff0ee;
+            color: var(--danger);
+        }
+
+        .tables {
+            display: grid;
+            gap: 18px;
+            margin-top: 20px;
+        }
+
+        .table-card {
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            overflow: hidden;
+            background: rgba(255,255,255,0.72);
+        }
+
+        .table-head {
+            padding: 14px 16px;
+            font-weight: 700;
+            border-bottom: 1px solid var(--line);
+            background: rgba(13, 111, 99, 0.06);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th, td {
+            padding: 12px 14px;
+            border-bottom: 1px solid rgba(63, 51, 33, 0.08);
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        pre {
+            margin: 0;
+            padding: 18px;
+            border-radius: 18px;
+            background: #131922;
+            color: #eaf2ff;
+            overflow: auto;
+            font-size: 12px;
+            line-height: 1.55;
+            min-height: 220px;
+        }
+
+        .small-note {
+            margin-top: 14px;
+            font-size: 13px;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        @media (max-width: 980px) {
+            .grid { grid-template-columns: 1fr; }
+            .metrics { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+<div class="shell">
+    <section class="hero">
+        <div class="eyebrow">Fairvalue Engine Ops</div>
+        <h1>US Equity Admin Console</h1>
+        <p>这个页面专门给我们做美股数据运维：同步 SEC universe、单票拉取 submissions 和 companyfacts、执行标准化，并直接查看 PostgreSQL 里的落库计数和样本明细。</p>
+    </section>
+
+    <section class="grid">
+        <div class="panel">
+            <h2>操作台</h2>
+            <div class="controls">
+                <div class="ticker-row">
+                    <label for="tickerInput">Ticker</label>
+                    <input id="tickerInput" value="AAPL" autocomplete="off" />
+                </div>
+                <div class="button-row">
+                    <button class="primary" id="overviewBtn">刷新概览</button>
+                    <button class="secondary" id="secSyncBtn">SEC Sync</button>
+                    <button class="warm" id="standardizeBtn">Standardize</button>
+                    <button class="ghost" id="universeBtn">Universe Sync</button>
+                </div>
+                <div class="status" id="statusBox">等待操作</div>
+            </div>
+
+            <div class="metrics">
+                <div class="metric">
+                    <span>Source Documents</span>
+                    <strong id="docCount">-</strong>
+                </div>
+                <div class="metric">
+                    <span>Raw Facts</span>
+                    <strong id="rawCount">-</strong>
+                </div>
+                <div class="metric">
+                    <span>Financial Standardized</span>
+                    <strong id="stdCount">-</strong>
+                </div>
+                <div class="metric">
+                    <span>Derived Metrics</span>
+                    <strong id="derivedCount">-</strong>
+                </div>
+            </div>
+
+            <div class="tables">
+                <div class="table-card">
+                    <div class="table-head">Latest Documents</div>
+                    <div id="documentsTable"></div>
+                </div>
+                <div class="table-card">
+                    <div class="table-head">Latest Raw Facts</div>
+                    <div id="rawFactsTable"></div>
+                </div>
+                <div class="table-card">
+                    <div class="table-head">Latest Financial Standardized</div>
+                    <div id="standardizedTable"></div>
+                </div>
+                <div class="table-card">
+                    <div class="table-head">Latest Financial Derived Metrics</div>
+                    <div id="derivedTable"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>最后一次返回</h2>
+            <pre id="responseBox">{}</pre>
+            <div class="small-note">
+                建议顺序：
+                1. 先点 <strong>SEC Sync</strong>
+                2. 再点 <strong>Standardize</strong>
+                3. 最后点 <strong>刷新概览</strong>
+            </div>
+        </div>
+    </section>
+</div>
+
+<script>
+    const tickerInput = document.getElementById("tickerInput");
+    const statusBox = document.getElementById("statusBox");
+    const responseBox = document.getElementById("responseBox");
+    const docCount = document.getElementById("docCount");
+    const rawCount = document.getElementById("rawCount");
+    const stdCount = document.getElementById("stdCount");
+    const derivedCount = document.getElementById("derivedCount");
+    const documentsTable = document.getElementById("documentsTable");
+    const rawFactsTable = document.getElementById("rawFactsTable");
+    const standardizedTable = document.getElementById("standardizedTable");
+    const derivedTable = document.getElementById("derivedTable");
+    const buttons = Array.from(document.querySelectorAll("button"));
+
+    function ticker() {
+        return tickerInput.value.trim().toUpperCase() || "AAPL";
+    }
+
+    function setBusy(flag) {
+        buttons.forEach(button => button.disabled = flag);
+    }
+
+    function setStatus(message, isError = false) {
+        statusBox.textContent = message;
+        statusBox.classList.toggle("error", isError);
+    }
+
+    function renderJson(payload) {
+        responseBox.textContent = JSON.stringify(payload, null, 2);
+    }
+
+    function renderTable(container, columns, rows) {
+        if (!rows || !rows.length) {
+            container.innerHTML = '<div style="padding:16px;color:#6d7683;">暂无数据</div>';
+            return;
+        }
+        const thead = columns.map(column => `<th>${column.label}</th>`).join("");
+        const tbody = rows.map(row => {
+            const cells = columns.map(column => `<td>${row[column.key] ?? "-"}</td>`).join("");
+            return `<tr>${cells}</tr>`;
+        }).join("");
+        container.innerHTML = `<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>`;
+    }
+
+    async function callApi(url, options = {}) {
+        setBusy(true);
+        setStatus(`请求中: ${url}`);
+        try {
+            const response = await fetch(url, options);
+            const payload = await response.json();
+            renderJson(payload);
+            if (!response.ok) {
+                throw new Error(payload.message || `HTTP ${response.status}`);
+            }
+            setStatus(`完成: ${url}`);
+            return payload;
+        } catch (error) {
+            setStatus(error.message, true);
+            throw error;
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function refreshOverview() {
+        const payload = await callApi(`/v1/us-equities-admin/${ticker()}/overview`);
+        docCount.textContent = payload.source_document_count;
+        rawCount.textContent = payload.raw_fact_count;
+        stdCount.textContent = payload.financial_standardized_count;
+        derivedCount.textContent = payload.financial_derived_metric_count;
+
+        renderTable(documentsTable, [
+            { key: "document_type", label: "Type" },
+            { key: "filing_date", label: "Filing Date" },
+            { key: "accession_no", label: "Accession" },
+            { key: "parsed_status", label: "Status" }
+        ], payload.latest_documents);
+
+        renderTable(rawFactsTable, [
+            { key: "document_type", label: "Doc" },
+            { key: "concept_name", label: "Concept" },
+            { key: "unit", label: "Unit" },
+            { key: "period_end", label: "Period End" },
+            { key: "value_numeric", label: "Value" }
+        ], payload.latest_raw_facts);
+
+        renderTable(standardizedTable, [
+            { key: "period_type", label: "Type" },
+            { key: "fiscal_year", label: "FY" },
+            { key: "fiscal_period", label: "FP" },
+            { key: "period_end", label: "Period End" },
+            { key: "revenue", label: "Revenue" },
+            { key: "net_income", label: "Net Income" },
+            { key: "free_cash_flow", label: "FCF" }
+        ], payload.latest_financial_standardized);
+
+        renderTable(derivedTable, [
+            { key: "period_type", label: "Type" },
+            { key: "fiscal_year", label: "FY" },
+            { key: "fiscal_period", label: "FP" },
+            { key: "period_end", label: "Period End" },
+            { key: "roic", label: "ROIC" },
+            { key: "fcf_margin", label: "FCF Margin" },
+            { key: "book_value_per_share", label: "BVPS" }
+        ], payload.latest_financial_derived_metrics);
+    }
+
+    document.getElementById("overviewBtn").addEventListener("click", refreshOverview);
+    document.getElementById("secSyncBtn").addEventListener("click", async () => {
+        await callApi(`/v1/us-equities-admin/${ticker()}/sec-sync`, { method: "POST" });
+        await refreshOverview();
+    });
+    document.getElementById("standardizeBtn").addEventListener("click", async () => {
+        await callApi(`/v1/us-equities-admin/${ticker()}/standardize`, { method: "POST" });
+        await refreshOverview();
+    });
+    document.getElementById("universeBtn").addEventListener("click", async () => {
+        await callApi(`/v1/us-equities-admin/universe/sync`, { method: "POST" });
+    });
+
+    refreshOverview().catch(() => {});
+</script>
+</body>
+</html>
