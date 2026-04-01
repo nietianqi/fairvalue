@@ -708,15 +708,16 @@ public class UsEquityValuationService {
             List<UsConfiguredMethodValuation> selectedMethods,
             UsDataQualityResponse dataQuality
     ) {
+        String dataVersion = firstNonBlank(snapshot.dataVersion(), "unknown");
+        String priceSource = parsePriceSource(dataVersion);
         Map<String, Object> attribution = new LinkedHashMap<>();
-        attribution.put("data_version", snapshot.dataVersion());
-        attribution.put("price_source", snapshot.dataVersion().contains("|")
-                ? snapshot.dataVersion().substring(0, snapshot.dataVersion().indexOf('|'))
-                : snapshot.dataVersion());
+        attribution.put("data_version", dataVersion);
+        attribution.put("price_source", priceSource);
         attribution.put("guidance_status", dataQuality.guidanceStatus());
 
         Map<String, String> parameterSources = new LinkedHashMap<>();
         List<String> peerSetTickers = new ArrayList<>();
+        Map<String, Long> peerSelectionBreakdown = new LinkedHashMap<>();
         String peerSetSource = null;
         String peerSelectionBasis = null;
         String relativeSourceMode = null;
@@ -745,6 +746,18 @@ public class UsEquityValuationService {
                         }
                     }
                 }
+                Object rawPeerSelectionBreakdown = assumptions.get("peer_selection_breakdown");
+                if (rawPeerSelectionBreakdown instanceof Map<?, ?> breakdownMap) {
+                    for (Map.Entry<?, ?> entry : breakdownMap.entrySet()) {
+                        if (entry.getKey() == null || entry.getValue() == null) {
+                            continue;
+                        }
+                        Long count = coerceLong(entry.getValue());
+                        if (count != null && count > 0) {
+                            peerSelectionBreakdown.put(entry.getKey().toString(), count);
+                        }
+                    }
+                }
                 if (peerSetSource == null && assumptions.get("peer_set_source") != null) {
                     peerSetSource = assumptions.get("peer_set_source").toString();
                 }
@@ -767,14 +780,16 @@ public class UsEquityValuationService {
                 parameterSources.get("target_ev_ebitda"),
                 parameterSources.get("target_pe")
         ));
-        attribution.put("target_multiple_sources", Map.of(
-                "target_ev_ebitda", parameterSources.get("target_ev_ebitda"),
-                "target_pe", parameterSources.get("target_pe")
-        ));
+        Map<String, String> targetMultipleSources = new LinkedHashMap<>();
+        targetMultipleSources.put("target_ev_ebitda", parameterSources.get("target_ev_ebitda"));
+        targetMultipleSources.put("target_pe", parameterSources.get("target_pe"));
+        attribution.put("target_multiple_sources", targetMultipleSources);
         attribution.put("market_multiple_source", "market_snapshot");
-        attribution.put("peer_set_source", peerSetSource);
-        attribution.put("peer_selection_basis", peerSelectionBasis);
-        attribution.put("relative_source_mode", relativeSourceMode);
+        boolean templateOnlyRelative = "template_only".equalsIgnoreCase(relativeSourceMode) || peerSetTickers.isEmpty();
+        attribution.put("peer_set_source", templateOnlyRelative ? "template_only" : firstNonBlank(peerSetSource, "peer_set"));
+        attribution.put("peer_selection_basis", templateOnlyRelative ? "template_only" : firstNonBlank(peerSelectionBasis, "mixed"));
+        attribution.put("relative_source_mode", templateOnlyRelative ? "template_only" : firstNonBlank(relativeSourceMode, "peer_set_plus_template"));
+        attribution.put("peer_selection_breakdown", peerSelectionBreakdown);
         attribution.put("peer_set_tickers", peerSetTickers);
         return attribution;
     }
@@ -785,8 +800,8 @@ public class UsEquityValuationService {
             List<UsConfiguredMethodValuation> selectedMethods
     ) {
         List<String> notes = new ArrayList<>();
-        String dataVersion = snapshot.dataVersion() == null ? "" : snapshot.dataVersion().toLowerCase(Locale.ROOT);
-        notes.add("price data version=" + snapshot.dataVersion());
+        String dataVersion = firstNonBlank(snapshot.dataVersion(), "").toLowerCase(Locale.ROOT);
+        notes.add("price data version=" + firstNonBlank(snapshot.dataVersion(), "unknown"));
         if (!dataVersion.contains("longbridge") && dataVersion.contains("stooq")) {
             notes.add("US price layer is still on fallback source for this run.");
         }
@@ -1094,6 +1109,15 @@ public class UsEquityValuationService {
                 .replace(".", "-");
     }
 
+    /** Extracts the primary price source from a compound data-version string (e.g. "longbridge:2026-03-30|stooq:…" → "longbridge:2026-03-30"). */
+    private String parsePriceSource(String dataVersion) {
+        if (dataVersion == null || dataVersion.isBlank()) {
+            return "stooq:fallback";
+        }
+        int pipe = dataVersion.indexOf('|');
+        return pipe >= 0 ? dataVersion.substring(0, pipe) : dataVersion;
+    }
+
     private String firstNonBlank(String... values) {
         for (String value : values) {
             if (value != null && !value.isBlank()) {
@@ -1101,6 +1125,17 @@ public class UsEquityValuationService {
             }
         }
         return null;
+    }
+
+    private Long coerceLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            return Long.parseLong(value.toString());
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private List<String> parseStringList(String rawJson) {

@@ -154,7 +154,9 @@ public class SecurityMasterRepository {
             String industry,
             String companyType,
             String sectorTemplate,
-            int limit
+            int limit,
+            double minFcfMargin,
+            double minRoic
     ) {
         return jdbcClient.sql("""
                         SELECT sm.id,
@@ -208,6 +210,9 @@ public class SecurityMasterRepository {
                           AND sm.country = 'US'
                           AND sm.is_active = TRUE
                           AND ms.last_price IS NOT NULL
+                          AND (fs.ebitda IS NULL OR fs.ebitda > 0)
+                          AND (:minFcfMargin < 0 OR (fd.fcf_margin IS NOT NULL AND fd.fcf_margin >= :minFcfMargin))
+                          AND (:minRoic < 0 OR (fd.roic IS NOT NULL AND fd.roic >= :minRoic))
                           AND (
                                 (:industry IS NOT NULL AND sm.industry = :industry)
                              OR (:sectorTemplate IS NOT NULL AND sm.sector_template = :sectorTemplate)
@@ -231,6 +236,8 @@ public class SecurityMasterRepository {
                 .param("companyType", blankToNull(companyType))
                 .param("sectorTemplate", blankToNull(sectorTemplate))
                 .param("limit", limit)
+                .param("minFcfMargin", minFcfMargin)
+                .param("minRoic", minRoic)
                 .query(this::mapRelativePeer)
                 .list();
     }

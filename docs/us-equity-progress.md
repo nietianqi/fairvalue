@@ -1,9 +1,9 @@
 ﻿# US Equity Progress
 
-更新日期：2026-03-31  
+更新日期：2026-04-01  
 当前分支：`codex/java-backend-foundation`  
-上一稳定提交：`6de2770`  
-当前本地状态：`Longbridge + FRED + Damodaran` 接入与 `Summary / Decision / Explanation` 三层输出已推送；本轮继续完成了 `AAPL / MSFT / NVDA` 的 Longbridge live 验证，以及 `Relative Valuation peer set + source attribution` 字段补强；仓库中仍存在与 CN/JP/前端有关的未整理本地改动。  
+上一稳定提交：`8620ad8`  
+当前本地状态：`Longbridge + FRED + Damodaran` 接入与 `Summary / Decision / Explanation` 三层输出已推送；本轮继续完成了美国股票估值链路的代码审查，并把 `Relative Valuation peer set` 收紧为“分层选组 + 严格过滤 + 模板回退”的规则；仓库中仍存在与 CN/JP/前端有关的未整理本地改动。  
 终版对齐说明：当前进度需结合 [美股估值系统_完整终版方案_v2.docx](F:/fairvalue/美股估值系统_完整终版方案_v2.docx) 和 [us-equity-final-plan-v2-alignment.md](F:/fairvalue/docs/us-equity-final-plan-v2-alignment.md) 一起阅读。
 
 ## 1. 当前运行状态
@@ -58,7 +58,7 @@
 ## 3. 测试状态
 
 1. 命令：`./mvnw.cmd test`
-2. 结果：`38` 个测试全部通过
+2. 结果：`41` 个测试全部通过
 3. 新增覆盖点：
    - `valuation_runs` 写入
    - `valuation_method_results` 写入
@@ -264,13 +264,16 @@
 2. `FRED` 代码链路已接通，当前网络对 `fredgraph.csv` 会超时；客户端已做快速失败和回退，但本轮还没有拿到稳定的 FRED live 数值进入 `parameter_sources`。
 3. `Damodaran` 已真实参与 `beta / relative multiple` 参数归因，但 `wacc.rf / wacc.erp` 在本轮 AAPL 输出中还没有稳定压过库内种子参数。
 4. `US-15` 虽已接上 `market_*` 表，但当前 `MSFT / NVDA` 的历史市场样本仍偏少，`Historical Multiple` 仍属于 `sparse` 状态。
-5. `Relative Valuation` 当前已升级到 `peer set + template fallback`，但 peer set 规则仍偏宽，还不是终版严格筛选器。
+5. `Relative Valuation` 当前已升级到“行业优先 -> sector_template -> company_type -> sector”的分层 peer set 选择，并叠加市值、FCF margin、ROIC 三层过滤；收入增长区间和行业专属 rule 仍待补齐。
 6. `AAPL` 当前仍落在 `income_defensive / us_general_quality`，是否调回 `compounder / us_tech_compounder` 需要继续校准规则阈值。
 7. `Summary / Decision / Explanation` 三层已经可用，12 个固定 explanation blocks 也已落地，但文案粒度和 PRD 终版措辞还值得继续打磨。
 8. 工作区是 dirty 的，包含大量本轮之外的未提交文件，后续提交时必须只挑相关文件，不能整体提交或回滚。
 
 ## 7. 推荐下一步
 
-1. 继续收紧 `Relative Valuation peer set` 的准入规则，让 peer 选择从“可用样本优先”升级到“质量过滤优先”。
+1. 继续把 `Relative Valuation peer set` 从“严格过滤”升级到“终版 peer universe”，重点补：
+   - 收入增长区间
+   - 行业专属 rule
+   - 更稳定的分类映射
 2. 继续补 `AAPL` 这类 case 的标准化财务覆盖，让 `financial_standardized / financial_derived_metrics` 比 `SEC profile` fallback 更完整。
 3. 继续把 `Relative Valuation peer set`、`FRED 稳定参数源` 和 `Summary / Decision / Explanation` 文案层补齐成终版结构。

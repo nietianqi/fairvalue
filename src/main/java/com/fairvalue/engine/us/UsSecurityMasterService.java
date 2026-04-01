@@ -66,13 +66,19 @@ public class UsSecurityMasterService {
         if (security == null) {
             return List.of();
         }
+        String companyType = security.companyType();
+        boolean qualityFilter = "compounder".equals(companyType) || "hypergrowth_saas".equals(companyType);
+        double minFcfMargin = qualityFilter ? 0.03 : -1.0;
+        double minRoic     = qualityFilter ? 0.05 : -1.0;
         return securityMasterRepository.findRelativePeers(
                 securityId,
                 security.sector(),
                 security.industry(),
-                security.companyType(),
+                companyType,
                 security.sectorTemplate(),
-                limit
+                limit,
+                minFcfMargin,
+                minRoic
         );
     }
 

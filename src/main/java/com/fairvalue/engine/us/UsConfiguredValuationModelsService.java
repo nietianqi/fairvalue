@@ -25,6 +25,10 @@ import java.util.function.Function;
 
 @Service
 public class UsConfiguredValuationModelsService {
+    private static final String RELATIVE_PEER_SOURCE =
+            "security_master+market_snapshot+financial_standardized+financial_derived_metrics";
+    private static final int RELATIVE_PEER_LIMIT = 8;
+    private static final int RELATIVE_PEER_MIN_REQUIRED = 3;
     private final UsSecurityMasterService usSecurityMasterService;
     private final UsValuationConfigService usValuationConfigService;
     private final FinancialStandardizedRepository financialStandardizedRepository;
@@ -395,9 +399,10 @@ public class UsConfiguredValuationModelsService {
     ) {
         StockSnapshot snapshot = context.snapshot();
         StockFundamentals fundamentals = snapshot.fundamentals();
-        List<UsRelativePeerComparable> peers = context.securityId() <= 0
-                ? List.of()
-                : usSecurityMasterService.findRelativePeers(context.securityId(), context.security(), 8);
+        RelativePeerSelection peerSelection = selectRelativePeers(context, RELATIVE_PEER_LIMIT);
+        List<UsRelativePeerComparable> peers = peerSelection.peers();
+        String peerSelectionBasis = peerSelectionBasis(context, peers);
+        Map<String, Long> peerSelectionBreakdown = peerSelectionBreakdown(context, peers);
         List<String> peerTickers = peers.stream()
                 .map(UsRelativePeerComparable::ticker)
                 .toList();
@@ -461,11 +466,15 @@ public class UsConfiguredValuationModelsService {
         assumptions.put("effective_target_pe_source", peerMedianPe == null ? "configured_template" : "peer_set");
         assumptions.put("component_count", components.size());
         assumptions.put("components", components);
+        assumptions.put("peer_candidate_count", peerSelection.candidateCount());
         assumptions.put("peer_set_size", peers.size());
         assumptions.put("peer_set_tickers", peerTickers);
-        assumptions.put("peer_selection_basis", peerSelectionBasis(context, peers));
-        assumptions.put("peer_set_source", "security_master+market_snapshot+financial_standardized+financial_derived_metrics");
+        assumptions.put("peer_selection_basis", peerSelectionBasis);
+        assumptions.put("peer_selection_breakdown", peerSelectionBreakdown);
+        assumptions.put("peer_set_source", peers.isEmpty() ? "template_only" : RELATIVE_PEER_SOURCE);
         assumptions.put("relative_source_mode", peers.isEmpty() ? "template_only" : "peer_set_plus_template");
+        assumptions.put("peer_selection_rule_version", "v2_strict");
+        assumptions.put("peer_filter_summary", peerSelection.filterSummary());
         assumptions.put("parameter_sources", parameterSources(context,
                 Map.entry("target_ev_ebitda", "relative.target_ev_ebitda"),
                 Map.entry("target_pe", "relative.target_pe")
@@ -492,8 +501,10 @@ public class UsConfiguredValuationModelsService {
                 anchors.isEmpty()
                         ? "No clean peer or vendor multiple series was available; relative valuation defaulted to price-neutral anchor."
                         : peers.isEmpty()
-                        ? "Peer set is not yet available for this ticker; relative valuation used configured template targets only."
-                        : "Relative valuation used peer set tickers=" + peerTickers + " with " + components.size() + " market anchors."
+                        ? "Peer set is not yet available for this ticker after strict peer filters; relative valuation used configured template targets only."
+                        : "Relative valuation used peer set tickers=" + peerTickers
+                        + " basis=" + peerSelectionBasis
+                        + " with " + components.size() + " market anchors."
         );
     }
 
@@ -877,26 +888,207 @@ public class UsConfiguredValuationModelsService {
     }
 
     private String peerSelectionBasis(UsValuationModelContext context, List<UsRelativePeerComparable> peers) {
-        if (peers.isEmpty() || context.security() == null) {
+        Map<String, Long> breakdown = peerSelectionBreakdown(context, peers);
+        if (breakdown.isEmpty()) {
             return "template_only";
         }
-        String industry = context.security().industry();
-        if (industry != null && peers.stream().anyMatch(peer -> industry.equalsIgnoreCase(peer.industry()))) {
+        return breakdown.size() == 1 ? breakdown.keySet().iterator().next() : "mixed";
+    }
+
+    private RelativePeerSelection selectRelativePeers(UsValuationModelContext context, int limit) {
+        if (context.securityId() <= 0 || context.security() == null) {
+            return new RelativePeerSelection(List.of(), 0, "no_security_context");
+        }
+        int candidateLimit = Math.max(limit * 3, 24);
+        List<UsRelativePeerComparable> candidates = usSecurityMasterService.findRelativePeers(
+                context.securityId(),
+                context.security(),
+                candidateLimit
+        );
+        if (candidates.isEmpty()) {
+            return new RelativePeerSelection(List.of(), 0, "no_candidates");
+        }
+
+        for (String basis : List.of("industry", "sector_template", "company_type", "sector")) {
+            List<UsRelativePeerComparable> basisPeers = candidates.stream()
+                    .filter(peer -> basis.equals(peerMatchBasis(context.security(), peer)))
+                    .toList();
+            if (basisPeers.isEmpty()) {
+                continue;
+            }
+            List<UsRelativePeerComparable> filtered = applyStrictPeerFilters(context, basisPeers, limit);
+            if (filtered.size() >= RELATIVE_PEER_MIN_REQUIRED) {
+                return new RelativePeerSelection(
+                        filtered,
+                        candidates.size(),
+                        "basis=" + basis + ", selected=" + filtered.size() + ", mode=strict"
+                );
+            }
+        }
+
+        for (String basis : List.of("industry", "sector_template", "company_type", "sector")) {
+            List<UsRelativePeerComparable> basisPeers = candidates.stream()
+                    .filter(peer -> basis.equals(peerMatchBasis(context.security(), peer)))
+                    .toList();
+            if (!basisPeers.isEmpty()) {
+                List<UsRelativePeerComparable> filtered = applyBasicPeerFilters(context, basisPeers, limit);
+                if (filtered.size() >= 2) {
+                    return new RelativePeerSelection(
+                            filtered,
+                            candidates.size(),
+                            "basis=" + basis + ", selected=" + filtered.size() + ", mode=relaxed"
+                    );
+                }
+            }
+        }
+
+        return new RelativePeerSelection(List.of(), candidates.size(), "no_clean_peer_set");
+    }
+
+    private Map<String, Long> peerSelectionBreakdown(UsValuationModelContext context, List<UsRelativePeerComparable> peers) {
+        if (peers.isEmpty() || context.security() == null) {
+            return Map.of();
+        }
+        Map<String, Long> breakdown = new LinkedHashMap<>();
+        for (UsRelativePeerComparable peer : peers) {
+            String basis = peerMatchBasis(context.security(), peer);
+            breakdown.merge(basis, 1L, Long::sum);
+        }
+        return breakdown;
+    }
+
+    private String peerMatchBasis(UsSecurityMaster security, UsRelativePeerComparable peer) {
+        if (sameValue(security.industry(), peer.industry())) {
             return "industry";
         }
-        String sectorTemplate = context.security().sectorTemplate();
-        if (sectorTemplate != null && peers.stream().anyMatch(peer -> sectorTemplate.equalsIgnoreCase(peer.sectorTemplate()))) {
+        if (sameValue(security.sectorTemplate(), peer.sectorTemplate())) {
             return "sector_template";
         }
-        String companyType = context.security().companyType();
-        if (companyType != null && peers.stream().anyMatch(peer -> companyType.equalsIgnoreCase(peer.companyType()))) {
+        if (sameValue(security.companyType(), peer.companyType())) {
             return "company_type";
         }
-        String sector = context.security().sector();
-        if (sector != null && peers.stream().anyMatch(peer -> sector.equalsIgnoreCase(peer.sector()))) {
+        if (sameValue(security.sector(), peer.sector())) {
             return "sector";
         }
-        return "template_only";
+        return "other";
+    }
+
+    private boolean sameValue(String left, String right) {
+        return left != null && right != null && left.equalsIgnoreCase(right);
+    }
+
+    private List<UsRelativePeerComparable> applyStrictPeerFilters(
+            UsValuationModelContext context,
+            List<UsRelativePeerComparable> peers,
+            int limit
+    ) {
+        return peers.stream()
+                .filter(peer -> hasUsableMultiple(peer))
+                .filter(peer -> withinMarketCapBand(context, peer, 0.25, 4.0))
+                .filter(peer -> withinFcfMarginBand(context, peer, 0.18))
+                .filter(peer -> withinRoicBand(context, peer, 0.30))
+                .sorted(Comparator.comparingDouble(peer -> peerDistance(context, peer)))
+                .limit(limit)
+                .toList();
+    }
+
+    private List<UsRelativePeerComparable> applyBasicPeerFilters(
+            UsValuationModelContext context,
+            List<UsRelativePeerComparable> peers,
+            int limit
+    ) {
+        return peers.stream()
+                .filter(peer -> hasUsableMultiple(peer))
+                .filter(peer -> withinMarketCapBand(context, peer, 0.15, 6.0))
+                .sorted(Comparator.comparingDouble(peer -> peerDistance(context, peer)))
+                .limit(limit)
+                .toList();
+    }
+
+    private boolean hasUsableMultiple(UsRelativePeerComparable peer) {
+        return positive(peer.peTtm())
+                || positive(peer.pb())
+                || peerEvEbitda(peer) != null;
+    }
+
+    private boolean withinMarketCapBand(UsValuationModelContext context, UsRelativePeerComparable peer, double minRatio, double maxRatio) {
+        double targetMarketCap = decimalValue(latestMarketCap(context));
+        double peerMarketCap = decimalValue(peer.marketCap());
+        if (targetMarketCap <= 0.0 || peerMarketCap <= 0.0) {
+            return true;
+        }
+        double ratio = peerMarketCap / targetMarketCap;
+        return ratio >= minRatio && ratio <= maxRatio;
+    }
+
+    private boolean withinFcfMarginBand(UsValuationModelContext context, UsRelativePeerComparable peer, double tolerance) {
+        Double targetFcfMargin = targetFcfMargin(context);
+        double peerFcfMargin = decimalValue(peer.fcfMargin());
+        if (targetFcfMargin == null || peerFcfMargin <= 0.0) {
+            return true;
+        }
+        return Math.abs(peerFcfMargin - targetFcfMargin) <= tolerance;
+    }
+
+    private boolean withinRoicBand(UsValuationModelContext context, UsRelativePeerComparable peer, double tolerance) {
+        Double targetRoic = targetRoic(context);
+        double peerRoic = decimalValue(peer.roic());
+        if (targetRoic == null || peerRoic <= 0.0) {
+            return true;
+        }
+        return Math.abs(peerRoic - targetRoic) <= tolerance;
+    }
+
+    private double peerDistance(UsValuationModelContext context, UsRelativePeerComparable peer) {
+        double distance = 0.0;
+        double targetMarketCap = decimalValue(latestMarketCap(context));
+        double peerMarketCap = decimalValue(peer.marketCap());
+        if (targetMarketCap > 0.0 && peerMarketCap > 0.0) {
+            distance += Math.abs(Math.log(peerMarketCap / targetMarketCap));
+        }
+        Double targetFcfMargin = targetFcfMargin(context);
+        if (targetFcfMargin != null && positive(peer.fcfMargin())) {
+            distance += Math.abs(decimalValue(peer.fcfMargin()) - targetFcfMargin);
+        }
+        Double targetRoic = targetRoic(context);
+        if (targetRoic != null && positive(peer.roic())) {
+            distance += Math.abs(decimalValue(peer.roic()) - targetRoic);
+        }
+        return distance;
+    }
+
+    private BigDecimal latestMarketCap(UsValuationModelContext context) {
+        return context.marketSnapshots().stream()
+                .map(UsMarketSnapshotRecord::marketCapVendor)
+                .filter(this::positive)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private Double targetFcfMargin(UsValuationModelContext context) {
+        if (positive(context.latestDerived() == null ? null : context.latestDerived().fcfMargin())) {
+            return decimalValue(context.latestDerived().fcfMargin());
+        }
+        double fallback = context.snapshot().fundamentals().fcfMargin();
+        return fallback > 0.0 ? fallback : null;
+    }
+
+    private Double targetRoic(UsValuationModelContext context) {
+        if (positive(context.latestDerived() == null ? null : context.latestDerived().roic())) {
+            return decimalValue(context.latestDerived().roic());
+        }
+        return null;
+    }
+
+    private boolean positive(BigDecimal value) {
+        return value != null && value.doubleValue() > 0.0;
+    }
+
+    private record RelativePeerSelection(
+            List<UsRelativePeerComparable> peers,
+            int candidateCount,
+            String filterSummary
+    ) {
     }
 
     @SafeVarargs
