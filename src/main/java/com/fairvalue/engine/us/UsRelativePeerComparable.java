@@ -14,6 +14,7 @@ public record UsRelativePeerComparable(
         BigDecimal marketCap,
         BigDecimal peTtm,
         BigDecimal pb,
+        BigDecimal revenueGrowthProxy,
         BigDecimal roic,
         BigDecimal fcfMargin,
         BigDecimal ebitda,

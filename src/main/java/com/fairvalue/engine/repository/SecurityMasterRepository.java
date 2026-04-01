@@ -170,6 +170,11 @@ public class SecurityMasterRepository {
                                ms.market_cap_vendor,
                                ms.pe_ttm_vendor,
                                ms.pb_vendor,
+                               CASE
+                                   WHEN fr_prev.revenue IS NOT NULL AND fr_prev.revenue > 0 AND fr.revenue IS NOT NULL
+                                       THEN (fr.revenue / fr_prev.revenue) - 1
+                                   ELSE NULL
+                               END AS revenue_growth_proxy,
                                fd.roic,
                                fd.fcf_margin,
                                fs.ebitda,
@@ -185,6 +190,32 @@ public class SecurityMasterRepository {
                             ORDER BY snapshot_time DESC
                             LIMIT 1
                         ) ms ON TRUE
+                        LEFT JOIN LATERAL (
+                            SELECT period_type,
+                                   period_end,
+                                   revenue
+                            FROM fairvalue.financial_standardized
+                            WHERE security_id = sm.id
+                              AND revenue IS NOT NULL
+                              AND period_type IN ('TTM', 'FY')
+                            ORDER BY CASE period_type
+                                         WHEN 'TTM' THEN 1
+                                         WHEN 'FY' THEN 2
+                                         ELSE 3
+                                     END,
+                                     period_end DESC
+                            LIMIT 1
+                        ) fr ON TRUE
+                        LEFT JOIN LATERAL (
+                            SELECT revenue
+                            FROM fairvalue.financial_standardized
+                            WHERE security_id = sm.id
+                              AND revenue IS NOT NULL
+                              AND period_type = fr.period_type
+                              AND period_end < fr.period_end
+                            ORDER BY period_end DESC
+                            LIMIT 1
+                        ) fr_prev ON TRUE
                         LEFT JOIN LATERAL (
                             SELECT roic,
                                    fcf_margin
@@ -273,6 +304,7 @@ public class SecurityMasterRepository {
                 rs.getBigDecimal("market_cap_vendor"),
                 rs.getBigDecimal("pe_ttm_vendor"),
                 rs.getBigDecimal("pb_vendor"),
+                rs.getBigDecimal("revenue_growth_proxy"),
                 rs.getBigDecimal("roic"),
                 rs.getBigDecimal("fcf_margin"),
                 rs.getBigDecimal("ebitda"),

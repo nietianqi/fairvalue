@@ -2,8 +2,8 @@
 
 更新日期：2026-04-01  
 当前分支：`codex/java-backend-foundation`  
-上一稳定提交：`8620ad8`  
-当前状态说明：本文件反映仓库当前美股代码基线；`Longbridge` 已完成一轮真实 live 验证，`Summary / Decision / Explanation` 三层结构已落地；`Relative Valuation` 已进一步收紧为严格 peer set 规则；仓库中仍存在与 CN/JP/前端有关的未整理本地改动。  
+上一稳定提交：`6cb9dc1`  
+当前状态说明：本文件反映仓库当前美股代码基线；`Longbridge` 已完成 `AAPL / MSFT / NVDA` 新一轮真实 live 验证，`Summary / Decision / Explanation` 三层结构已落地；`Relative Valuation` 已进一步收紧为严格 peer set 规则，并把 `收入增长区间` 接进了 peer 过滤；仓库中仍存在与 CN/JP/前端有关的未整理本地改动。  
 终版对齐说明：任务优先级已按 [美股估值系统_完整终版方案_v2.docx](F:/fairvalue/美股估值系统_完整终版方案_v2.docx) 和 [us-equity-final-plan-v2-alignment.md](F:/fairvalue/docs/us-equity-final-plan-v2-alignment.md) 重新理解。
 
 ## 1. 硬约束
@@ -31,12 +31,12 @@
 | US-06 | SEC 文档元数据接入 | 已完成 | `submissions -> source_documents`。 |
 | US-07 | SEC raw facts 接入 | 已完成 | `companyfacts -> source_document_facts_raw`。 |
 | US-08 | 公司 IR 文档元数据 | 已完成 | 已覆盖 `AAPL / MSFT / NVDA` 官方 feed。 |
-| US-09 | 市场数据层接入 | 进行中 | 已正式写入 `market_data_raw / market_price_daily / market_snapshot / market_intraday_snapshot`，`Longbridge` 主源 SDK、行情抓取和落表链路已接入并完成 AAPL live 验证；默认仍需通过环境变量显式打开，当前 fallback 仍保留 `Stooq + SEC enrich`，FRED 当前网络下会超时回退。 |
+| US-09 | 市场数据层接入 | 进行中 | 已正式写入 `market_data_raw / market_price_daily / market_snapshot / market_intraday_snapshot`，`Longbridge` 主源 SDK、行情抓取和落表链路已接入并完成 `AAPL / MSFT / NVDA` live 验证；默认仍需通过环境变量显式打开，当前 fallback 仍保留 `Stooq + SEC enrich`，这轮 live 因未提供 `FRED_API_KEY` 维持 `FRED disabled`。 |
 | US-10 | 财务标准化管道 | 已完成 | `financial_standardized` 已支持 `FY / Q / TTM`。 |
 | US-11 | 派生指标引擎 | 已完成 | `ROIC / FCF margin / accruals / leverage / book value per share` 已落库。 |
 | US-12 | 数据质量审计引擎 | 已完成 | `data_quality_audit` 已正式落库，`data-quality` 接口优先读取审计表。 |
 | US-13 | company_type / sector_template 选择器 | 已完成 | 已配置化并写回 `security_master`；`AAPL` 在当前真实规则下会落到 `general_quality / us_general_quality`。 |
-| US-14 | Relative Valuation | 进行中 | 已正式聚合为 `relative_valuation` 并落到 `valuation_method_results`；当前已升级为“行业优先 -> sector_template -> company_type -> sector”的分层 peer set，并叠加市值/FCF margin/ROIC 过滤；收入增长区间与行业专属 rule 仍待补齐。 |
+| US-14 | Relative Valuation | 进行中 | 已正式聚合为 `relative_valuation` 并落到 `valuation_method_results`；当前已升级为“行业优先 -> sector_template -> company_type -> sector”的分层 peer set，并叠加市值/收入增长/FCF margin/ROIC/可用倍数过滤；行业专属 rule 仍待补齐。 |
 | US-15 | Historical Multiple | 进行中 | 已接到 `market_price_daily + market_snapshot`，并写入 `valuation_method_results`；当前历史样本仍偏稀疏，属于 PRD 的最小落地版。 |
 | US-16 | DCF / FCFF | 已完成 | 已升级成 `sector_template_config + valuation_parameter_set` 驱动的可配置 FCFF 模型，并支持 `custom_assumptions` 覆盖。 |
 | US-17 | Reverse DCF | 已完成 | 已升级成独立可解释引擎，支持隐含增长求解、`reverse_dcf_results` 落库和 explanation block 输出。 |
@@ -45,9 +45,9 @@
 | US-20 | 情景引擎与 Margin of Safety | 进行中 | `bear / base / bull` 已结构化落库，后续还需接更细的增长/利润率驱动。 |
 | US-21 | Explanation Blocks | 进行中 | 已落成 12 个固定 blocks，并接入 `run/report` 输出与 `report_blocks`；仍需 Claude Code 继续打磨措辞和 PRD 对齐。 |
 | US-22 | Profile / Data Quality / Financial Quality API | 进行中 | 三类接口均已接真实库表；仍需补更多 PRD 字段。 |
-| US-23 | Valuation Run / Summary / Report API | 进行中 | `run` 已返回结构化 `summary / decision / explanation`，`summary/report` 可用并已完成 AAPL live 验证；完整 PRD 字段和 source attribution 仍待细化。 |
+| US-23 | Valuation Run / Summary / Report API | 进行中 | `run` 已返回结构化 `summary / decision / explanation`，`summary/report` 可用并已完成 `AAPL / MSFT / NVDA` live 验证；`source attribution v2` 已返回 `peer_candidate_count / peer_selection_rule_version / peer_filter_summary / peer_filter_metrics / effective_target_multiple_sources`，完整 PRD 字段仍待继续细化。 |
 | US-24 | 任务调度 | 待做 | 目前有手动 sync 入口，尚无完整 ingestion / normalization / valuation job orchestration。 |
-| US-25 | 单测与契约测试 | 进行中 | 当前 `41` 个测试通过，已覆盖估值持久化最小链路与 peer set/source attribution 回归。 |
+| US-25 | 单测与契约测试 | 进行中 | 当前 `42` 个测试通过，已覆盖估值持久化最小链路与 peer set/source attribution 回归。 |
 | US-26 | 文档回写与验收报告 | 进行中 | progress / task list / handoff 已建立，需持续维护。 |
 
 ## 4. 这一批新增的关键事实
@@ -73,11 +73,18 @@
 12. peer set 当前规则：
    - 候选池放大后再筛选
    - 优先级：`industry -> sector_template -> company_type -> sector`
-   - 严格过滤：市值区间、FCF margin、ROIC、可用倍数
+   - 严格过滤：市值区间、收入增长区间、FCF margin、ROIC、可用倍数
    - 无干净 peer 时回退 `template_only`
+13. `source attribution` 当前已补齐：
+   - `peer_candidate_count`
+   - `peer_selection_rule_version`
+   - `peer_filter_summary`
+   - `peer_filter_metrics`
+   - `effective_target_multiple_sources`
+   - `source_attribution_version = v2`
 
 ## 5. 当前最顺的下一步
 
-1. 继续把 `Relative Valuation peer set` 从“严格过滤”升级到“终版 peer universe”，重点补收入增长区间和行业专属规则。
+1. 继续把 `Relative Valuation peer set` 从“严格过滤”升级到“终版 peer universe”，重点补行业专属规则和 peer 准入白名单。
 2. 继续补 `AAPL` 这类 case 的标准化财务覆盖，让 `financial_standardized / derived_metrics` 更完整，而不只是依赖 `SEC profile` 托底。
 3. `US-22 / US-23`：继续把 `Summary / Decision / Explanation` 三层里的 source attribution、macro source、peer set 解释补齐到终版结构。

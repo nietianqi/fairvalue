@@ -475,6 +475,7 @@ public class UsConfiguredValuationModelsService {
         assumptions.put("relative_source_mode", peers.isEmpty() ? "template_only" : "peer_set_plus_template");
         assumptions.put("peer_selection_rule_version", "v2_strict");
         assumptions.put("peer_filter_summary", peerSelection.filterSummary());
+        assumptions.put("peer_filter_metrics", List.of("market_cap", "revenue_growth", "fcf_margin", "roic", "usable_multiple"));
         assumptions.put("parameter_sources", parameterSources(context,
                 Map.entry("target_ev_ebitda", "relative.target_ev_ebitda"),
                 Map.entry("target_pe", "relative.target_pe")
@@ -985,6 +986,7 @@ public class UsConfiguredValuationModelsService {
         return peers.stream()
                 .filter(peer -> hasUsableMultiple(peer))
                 .filter(peer -> withinMarketCapBand(context, peer, 0.25, 4.0))
+                .filter(peer -> withinRevenueGrowthBand(context, peer, 0.18))
                 .filter(peer -> withinFcfMarginBand(context, peer, 0.18))
                 .filter(peer -> withinRoicBand(context, peer, 0.30))
                 .sorted(Comparator.comparingDouble(peer -> peerDistance(context, peer)))
@@ -1039,12 +1041,25 @@ public class UsConfiguredValuationModelsService {
         return Math.abs(peerRoic - targetRoic) <= tolerance;
     }
 
+    private boolean withinRevenueGrowthBand(UsValuationModelContext context, UsRelativePeerComparable peer, double tolerance) {
+        Double targetRevenueGrowth = targetRevenueGrowth(context);
+        if (targetRevenueGrowth == null || peer.revenueGrowthProxy() == null) {
+            return true;
+        }
+        double peerRevenueGrowth = decimalValue(peer.revenueGrowthProxy());
+        return Math.abs(peerRevenueGrowth - targetRevenueGrowth) <= tolerance;
+    }
+
     private double peerDistance(UsValuationModelContext context, UsRelativePeerComparable peer) {
         double distance = 0.0;
         double targetMarketCap = decimalValue(latestMarketCap(context));
         double peerMarketCap = decimalValue(peer.marketCap());
         if (targetMarketCap > 0.0 && peerMarketCap > 0.0) {
             distance += Math.abs(Math.log(peerMarketCap / targetMarketCap));
+        }
+        Double targetRevenueGrowth = targetRevenueGrowth(context);
+        if (targetRevenueGrowth != null && peer.revenueGrowthProxy() != null) {
+            distance += Math.abs(decimalValue(peer.revenueGrowthProxy()) - targetRevenueGrowth);
         }
         Double targetFcfMargin = targetFcfMargin(context);
         if (targetFcfMargin != null && positive(peer.fcfMargin())) {
@@ -1073,11 +1088,50 @@ public class UsConfiguredValuationModelsService {
         return fallback > 0.0 ? fallback : null;
     }
 
+    private Double targetRevenueGrowth(UsValuationModelContext context) {
+        Double structured = structuredRevenueGrowth(context);
+        if (structured != null) {
+            return structured;
+        }
+        double fallback = context.snapshot().fundamentals().revenueGrowth();
+        return Math.abs(fallback) > 0.0001 ? fallback : null;
+    }
+
     private Double targetRoic(UsValuationModelContext context) {
         if (positive(context.latestDerived() == null ? null : context.latestDerived().roic())) {
             return decimalValue(context.latestDerived().roic());
         }
         return null;
+    }
+
+    private Double structuredRevenueGrowth(UsValuationModelContext context) {
+        RevenuePoint latest = latestRevenuePoint(context);
+        if (latest == null) {
+            return null;
+        }
+        RevenuePoint previous = previousRevenuePoint(context, latest);
+        if (previous == null || previous.revenue() == null || previous.revenue().doubleValue() <= 0.0) {
+            return null;
+        }
+        return latest.revenue().doubleValue() / previous.revenue().doubleValue() - 1.0;
+    }
+
+    private RevenuePoint latestRevenuePoint(UsValuationModelContext context) {
+        return context.financials().stream()
+                .filter(record -> positive(record.revenue()) && ("TTM".equals(record.periodType()) || "FY".equals(record.periodType())))
+                .map(record -> new RevenuePoint(record.periodType(), record.periodEnd(), record.revenue()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private RevenuePoint previousRevenuePoint(UsValuationModelContext context, RevenuePoint latest) {
+        return context.financials().stream()
+                .filter(record -> latest.periodType().equals(record.periodType()))
+                .filter(record -> positive(record.revenue()))
+                .filter(record -> latest.periodEnd() != null && record.periodEnd() != null && record.periodEnd().isBefore(latest.periodEnd()))
+                .map(record -> new RevenuePoint(record.periodType(), record.periodEnd(), record.revenue()))
+                .findFirst()
+                .orElse(null);
     }
 
     private boolean positive(BigDecimal value) {
@@ -1088,6 +1142,13 @@ public class UsConfiguredValuationModelsService {
             List<UsRelativePeerComparable> peers,
             int candidateCount,
             String filterSummary
+    ) {
+    }
+
+    private record RevenuePoint(
+            String periodType,
+            LocalDate periodEnd,
+            BigDecimal revenue
     ) {
     }
 

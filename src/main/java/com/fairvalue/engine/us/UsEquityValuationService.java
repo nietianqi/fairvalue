@@ -718,9 +718,14 @@ public class UsEquityValuationService {
         Map<String, String> parameterSources = new LinkedHashMap<>();
         List<String> peerSetTickers = new ArrayList<>();
         Map<String, Long> peerSelectionBreakdown = new LinkedHashMap<>();
+        List<String> peerFilterMetrics = new ArrayList<>();
         String peerSetSource = null;
         String peerSelectionBasis = null;
         String relativeSourceMode = null;
+        String peerFilterSummary = null;
+        String peerSelectionRuleVersion = null;
+        Integer peerCandidateCount = null;
+        Map<String, String> effectiveTargetMultipleSources = new LinkedHashMap<>();
         for (UsConfiguredMethodValuation method : selectedMethods) {
             if (method.assumptionsJson() == null || method.assumptionsJson().isBlank()) {
                 continue;
@@ -758,6 +763,17 @@ public class UsEquityValuationService {
                         }
                     }
                 }
+                Object rawPeerFilterMetrics = assumptions.get("peer_filter_metrics");
+                if (rawPeerFilterMetrics instanceof List<?> peerFilterMetricList) {
+                    for (Object value : peerFilterMetricList) {
+                        if (value != null) {
+                            String metric = value.toString();
+                            if (!metric.isBlank() && !peerFilterMetrics.contains(metric)) {
+                                peerFilterMetrics.add(metric);
+                            }
+                        }
+                    }
+                }
                 if (peerSetSource == null && assumptions.get("peer_set_source") != null) {
                     peerSetSource = assumptions.get("peer_set_source").toString();
                 }
@@ -767,6 +783,17 @@ public class UsEquityValuationService {
                 if (relativeSourceMode == null && assumptions.get("relative_source_mode") != null) {
                     relativeSourceMode = assumptions.get("relative_source_mode").toString();
                 }
+                if (peerFilterSummary == null && assumptions.get("peer_filter_summary") != null) {
+                    peerFilterSummary = assumptions.get("peer_filter_summary").toString();
+                }
+                if (peerSelectionRuleVersion == null && assumptions.get("peer_selection_rule_version") != null) {
+                    peerSelectionRuleVersion = assumptions.get("peer_selection_rule_version").toString();
+                }
+                if (peerCandidateCount == null && assumptions.get("peer_candidate_count") instanceof Number number) {
+                    peerCandidateCount = number.intValue();
+                }
+                captureStringMapEntry(assumptions, "effective_target_ev_ebitda_source", effectiveTargetMultipleSources, "target_ev_ebitda");
+                captureStringMapEntry(assumptions, "effective_target_pe_source", effectiveTargetMultipleSources, "target_pe");
             } catch (Exception ignored) {
                 // Keep source attribution best-effort; it must not break valuation output.
             }
@@ -790,7 +817,13 @@ public class UsEquityValuationService {
         attribution.put("peer_selection_basis", templateOnlyRelative ? "template_only" : firstNonBlank(peerSelectionBasis, "mixed"));
         attribution.put("relative_source_mode", templateOnlyRelative ? "template_only" : firstNonBlank(relativeSourceMode, "peer_set_plus_template"));
         attribution.put("peer_selection_breakdown", peerSelectionBreakdown);
+        attribution.put("peer_candidate_count", peerCandidateCount);
+        attribution.put("peer_selection_rule_version", firstNonBlank(peerSelectionRuleVersion, templateOnlyRelative ? null : "v2_strict"));
+        attribution.put("peer_filter_summary", peerFilterSummary);
+        attribution.put("peer_filter_metrics", peerFilterMetrics);
+        attribution.put("effective_target_multiple_sources", effectiveTargetMultipleSources);
         attribution.put("peer_set_tickers", peerSetTickers);
+        attribution.put("source_attribution_version", "v2");
         return attribution;
     }
 
@@ -1135,6 +1168,21 @@ public class UsEquityValuationService {
             return Long.parseLong(value.toString());
         } catch (Exception ignored) {
             return null;
+        }
+    }
+
+    private void captureStringMapEntry(
+            Map<String, Object> assumptions,
+            String assumptionKey,
+            Map<String, String> target,
+            String targetKey
+    ) {
+        Object raw = assumptions.get(assumptionKey);
+        if (raw != null) {
+            String value = raw.toString();
+            if (!value.isBlank()) {
+                target.put(targetKey, value);
+            }
         }
     }
 

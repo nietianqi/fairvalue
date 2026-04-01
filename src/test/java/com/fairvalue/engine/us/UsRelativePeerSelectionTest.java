@@ -75,6 +75,11 @@ class UsRelativePeerSelectionTest {
                   "peer_set_source": "template_only",
                   "peer_selection_basis": "template_only",
                   "relative_source_mode": "template_only",
+                  "peer_candidate_count": 12,
+                  "peer_selection_rule_version": "v2_strict",
+                  "peer_filter_summary": "basis=industry, selected=0, mode=strict",
+                  "peer_filter_metrics": ["market_cap", "revenue_growth"],
+                  "effective_target_ev_ebitda_source": "configured_template",
                   "peer_set_tickers": [],
                   "peer_selection_breakdown": {}
                 }
@@ -120,12 +125,19 @@ class UsRelativePeerSelectionTest {
         assertThat(attribution.get("peer_set_source")).isEqualTo("template_only");
         assertThat(attribution.get("peer_selection_basis")).isEqualTo("template_only");
         assertThat(attribution.get("relative_source_mode")).isEqualTo("template_only");
+        assertThat(attribution.get("source_attribution_version")).isEqualTo("v2");
+        assertThat(attribution.get("peer_candidate_count")).isEqualTo(12);
+        assertThat(attribution.get("peer_selection_rule_version")).isEqualTo("v2_strict");
+        assertThat(attribution.get("peer_filter_summary")).isEqualTo("basis=industry, selected=0, mode=strict");
+        assertThat((List<String>) attribution.get("peer_filter_metrics")).containsExactly("market_cap", "revenue_growth");
 
         Map<String, String> targetMultipleSources = (Map<String, String>) attribution.get("target_multiple_sources");
         assertThat(targetMultipleSources)
                 .containsEntry("target_ev_ebitda", "damodaran_ev_ebitda:Computers/Peripherals")
                 .containsKey("target_pe");
         assertThat(targetMultipleSources.get("target_pe")).isNull();
+        assertThat((Map<String, String>) attribution.get("effective_target_multiple_sources"))
+                .containsEntry("target_ev_ebitda", "configured_template");
     }
 
     @Test
@@ -195,6 +207,67 @@ class UsRelativePeerSelectionTest {
                 .containsEntry("industry", 1L)
                 .containsEntry("sector_template", 1L)
                 .containsEntry("sector", 1L);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void strictPeerFiltersShouldExcludeRevenueGrowthOutliers() {
+        UsSecurityMaster security = new UsSecurityMaster(
+                1L,
+                "TEST",
+                "TEST.US",
+                "Test Security",
+                "NASDAQ",
+                "USD",
+                "Technology",
+                "Consumer Electronics",
+                null,
+                "compounder",
+                "us_tech_compounder",
+                "US",
+                true
+        );
+        UsValuationModelContext context = new UsValuationModelContext(
+                1L,
+                sampleSnapshot("TEST", "stooq:2026-03-31"),
+                security,
+                null,
+                new UsResolvedValuationConfig(
+                        "us_tech_compounder",
+                        List.of("relative_valuation"),
+                        Map.of("relative_valuation", 1.0),
+                        Map.of(),
+                        0.25,
+                        List.of(),
+                        Map.of()
+                ),
+                List.of(),
+                List.of(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(marketSnapshot(new BigDecimal("1000000")))
+        );
+        List<UsRelativePeerComparable> peers = List.of(
+                peer("PEERNEAR", "Technology", "Consumer Electronics", "compounder", "us_tech_compounder", new BigDecimal("0.11")),
+                peer("PEERFAR", "Technology", "Consumer Electronics", "compounder", "us_tech_compounder", new BigDecimal("0.42"))
+        );
+
+        List<UsRelativePeerComparable> filtered = (List<UsRelativePeerComparable>) ReflectionTestUtils.invokeMethod(
+                usConfiguredValuationModelsService,
+                "applyStrictPeerFilters",
+                context,
+                peers,
+                8
+        );
+
+        assertThat(filtered)
+                .extracting(UsRelativePeerComparable::ticker)
+                .containsExactly("PEERNEAR");
     }
 
     @Test
@@ -387,6 +460,17 @@ class UsRelativePeerSelectionTest {
             String companyType,
             String sectorTemplate
     ) {
+        return peer(ticker, sector, industry, companyType, sectorTemplate, new BigDecimal("0.10"));
+    }
+
+    private UsRelativePeerComparable peer(
+            String ticker,
+            String sector,
+            String industry,
+            String companyType,
+            String sectorTemplate,
+            BigDecimal revenueGrowthProxy
+    ) {
         return new UsRelativePeerComparable(
                 1L,
                 ticker,
@@ -399,10 +483,22 @@ class UsRelativePeerSelectionTest {
                 new BigDecimal("1000000"),
                 new BigDecimal("20"),
                 new BigDecimal("4"),
+                revenueGrowthProxy,
                 new BigDecimal("0.08"),
                 new BigDecimal("0.06"),
                 new BigDecimal("100"),
                 BigDecimal.ZERO
+        );
+    }
+
+    private UsMarketSnapshotRecord marketSnapshot(BigDecimal marketCap) {
+        return new UsMarketSnapshotRecord(
+                Instant.parse("2026-03-31T00:00:00Z"),
+                BigDecimal.TEN,
+                marketCap,
+                new BigDecimal("20"),
+                new BigDecimal("4"),
+                new BigDecimal("0.01")
         );
     }
 }
