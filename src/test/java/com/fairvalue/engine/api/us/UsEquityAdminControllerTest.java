@@ -375,11 +375,32 @@ class UsEquityAdminControllerTest {
         mockMvc.perform(post("/v1/us-equities-admin/snapshot-backfill/top50"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.list_name").value("top50_cross_industry_v1"))
+                .andExpect(jsonPath("$.mode").value("run"))
                 .andExpect(jsonPath("$.requested_count").value(50))
                 .andExpect(jsonPath("$.items.length()").value(50))
                 .andExpect(jsonPath("$.completed_count").value(org.hamcrest.Matchers.greaterThan(0)));
 
         verify(usEquityValuationService).runValuation(eq("AAPL"), any());
+    }
+
+    @Test
+    void shouldQueueUniverseSnapshotBackfillPage() throws Exception {
+        mockMvc.perform(post("/v1/us-equities-admin/snapshot-backfill/universe")
+                        .param("page", "1")
+                        .param("size", "3")
+                        .param("mode", "queue")
+                        .param("priority", "240"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.list_name").value("us_universe_page_1_size_3"))
+                .andExpect(jsonPath("$.mode").value("queue"))
+                .andExpect(jsonPath("$.requested_count").value(3))
+                .andExpect(jsonPath("$.completed_count").value(3))
+                .andExpect(jsonPath("$.items.length()").value(3))
+                .andExpect(jsonPath("$.items[0].status").value("queued"));
+
+        mockMvc.perform(get("/v1/us-equities-admin/valuation-jobs/summary"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.queued_count").value(3));
     }
 
     @Test

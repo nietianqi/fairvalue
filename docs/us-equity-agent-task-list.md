@@ -390,3 +390,38 @@ Jackson SNAKE_CASE 不转换 Map key（只转 bean 字段名）。
 **Claude Code 端（前端）：**
 1. `CC-A`（P1）：`jp-stock-detail.html` + `.js`（等 S9-D 完成）
 2. `CC-C`（P1）：JP ticker 链接收口（等 CC-A 完成）
+3. `CC-US-ADMIN`（P1）：复核 `US admin` 新增的 `Top 50 Backfill / Top 100 Queue / 严格榜单覆盖率` 交互与文案
+
+---
+
+## 8. Session 10 补充（US strict ranking 覆盖率推进）
+
+### S10-A（P1）— Universe 批量快照回填入口
+
+**已完成：**
+- `POST /v1/us-equities-admin/snapshot-backfill/universe`
+- 支持参数：
+  - `page`
+  - `size`
+  - `mode=run|queue`
+  - `priority`
+
+**用途：**
+- 给 `valuation_latest_snapshot` 批量补覆盖率
+- 加快 `strict_ready` 从 `false` 向 `true` 推进
+
+**当前建议调用：**
+- `POST /v1/us-equities-admin/snapshot-backfill/universe?page=1&size=100&mode=queue&priority=220`
+
+### S10-B（P1）— US Admin 覆盖率可视化
+
+**已完成：**
+- `us-equities-admin.html` 新增：
+  - `Top 50 Backfill`
+  - `Top 100 Queue`
+  - `严格榜单覆盖率`
+
+**Claude Code Review 重点：**
+- 覆盖率卡片文案是否需要更强提示
+- queue 模式是否需要二次确认
+- `strict_ready=false` 时是否需要更明确的产品提示

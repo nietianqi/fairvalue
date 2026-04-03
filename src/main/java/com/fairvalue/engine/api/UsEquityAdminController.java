@@ -155,6 +155,18 @@ public class UsEquityAdminController {
         return usSnapshotBackfillService.backfillTop50();
     }
 
+    @PostMapping("/snapshot-backfill/universe")
+    public UsSnapshotBackfillService.SnapshotBackfillSummary backfillUniversePage(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "100") int size,
+            @RequestParam(defaultValue = "queue") String mode,
+            @RequestParam(defaultValue = "180") int priority
+    ) {
+        return "run".equalsIgnoreCase(mode)
+                ? usSnapshotBackfillService.backfillUniversePage(page, size)
+                : usSnapshotBackfillService.queueUniversePage(page, size, priority);
+    }
+
     @PostMapping("/universe/sync")
     public UsUniverseSyncService.UniverseSyncSummary syncUniverse() {
         return usUniverseSyncService.syncSecTickerUniverse();

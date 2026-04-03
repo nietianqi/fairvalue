@@ -8,6 +8,8 @@ const detailLink = document.getElementById('detailLink');
 const classificationLine = document.getElementById('classificationLine');
 const sourceAsOf = document.getElementById('sourceAsOf');
 const sourceCards = document.getElementById('sourceCards');
+const rankingMode = document.getElementById('rankingMode');
+const rankingCoverageCards = document.getElementById('rankingCoverageCards');
 const alertsAsOf = document.getElementById('alertsAsOf');
 const alertCards = document.getElementById('alertCards');
 const platformPlan = document.getElementById('platformPlan');
@@ -44,6 +46,7 @@ const state = {
   overview: null,
   sourceStatus: null,
   alerts: null,
+  rankingCoverage: null,
   platformMe: null,
   platformUsage: null,
   jobSummary: null,
@@ -102,6 +105,12 @@ function bindEvents() {
   document.getElementById('universeBtn').addEventListener('click', async () => {
     await runAction('/v1/us-equities-admin/universe/sync', { method: 'POST', refresh: ['jobs'] });
   });
+  document.getElementById('top50BackfillBtn').addEventListener('click', async () => {
+    await runAction('/v1/us-equities-admin/snapshot-backfill/top50', { method: 'POST', refresh: ['all'] });
+  });
+  document.getElementById('universeBackfillBtn').addEventListener('click', async () => {
+    await runAction('/v1/us-equities-admin/snapshot-backfill/universe?page=1&size=100&mode=queue&priority=220', { method: 'POST', refresh: ['all'] });
+  });
 }
 
 async function loadDashboard() {
@@ -117,11 +126,12 @@ async function loadDashboard() {
     fetchJson(`/v1/us-equities-admin/${symbol}/valuation-jobs?limit=8`),
     fetchJson('/v1/us-equities-admin/valuation-jobs?limit=8'),
     fetchJson('/v1/us-equities-admin/valuation-alerts'),
+    fetchJson('/v1/us-equities-admin/ranking-coverage'),
     fetchJson('/v1/platform/me'),
     fetchJson('/v1/platform/usage'),
   ]);
 
-  const [overviewRes, summaryRes, tickerJobsRes, globalJobsRes, alertsRes, platformMeRes, platformUsageRes] = requests;
+  const [overviewRes, summaryRes, tickerJobsRes, globalJobsRes, alertsRes, rankingCoverageRes, platformMeRes, platformUsageRes] = requests;
 
   if (overviewRes.status === 'fulfilled') {
     state.overview = overviewRes.value;
@@ -147,6 +157,13 @@ async function loadDashboard() {
     renderAlerts(alertsRes.value);
   } else {
     renderAlerts(null);
+  }
+
+  if (rankingCoverageRes.status === 'fulfilled') {
+    state.rankingCoverage = rankingCoverageRes.value;
+    renderRankingCoverage(rankingCoverageRes.value);
+  } else {
+    renderRankingCoverage(null);
   }
 
   state.platformMe = platformMeRes.status === 'fulfilled' ? platformMeRes.value : null;
@@ -189,12 +206,14 @@ async function runAction(url, options = {}) {
         renderSourceStatus(payload);
       }
       if ((options.refresh || []).includes('jobs')) {
-        const [summary, jobs] = await Promise.all([
+        const [summary, jobs, coverage] = await Promise.all([
           fetchJson('/v1/us-equities-admin/valuation-jobs/summary'),
           fetchJson('/v1/us-equities-admin/valuation-jobs?limit=8'),
+          fetchJson('/v1/us-equities-admin/ranking-coverage'),
         ]);
         renderJobSummary(summary);
         renderJobsTables(state.tickerJobs, jobs);
+        renderRankingCoverage(coverage);
       }
     }
     return payload;
@@ -370,6 +389,29 @@ function renderSourceStatus(payload, error) {
   }).join('');
 }
 
+function renderRankingCoverage(payload) {
+  if (!payload) {
+    rankingMode.textContent = '加载失败';
+    rankingCoverageCards.innerHTML = [
+      miniCard('Universe', '-'),
+      miniCard('Snapshots', '-'),
+      miniCard('Rankable', '-'),
+      miniCard('Coverage', '-'),
+    ].join('');
+    return;
+  }
+
+  rankingMode.textContent = payload.strict_ready
+    ? `STRICT · ${safe(payload.ranking_mode)}`
+    : `TRANSITIONAL · ${safe(payload.ranking_mode)}`;
+  rankingCoverageCards.innerHTML = [
+    miniCard('Universe', payload.universe_size),
+    miniCard('Snapshots', payload.snapshot_count),
+    miniCard('Rankable', payload.rankable_count),
+    miniCard('Coverage', `${formatPercent(payload.snapshot_coverage)} / ${formatPercent(payload.rankable_coverage)}`),
+  ].join('');
+}
+
 function renderAlerts(payload) {
   if (!payload) {
     alertsAsOf.textContent = '加载失败';
@@ -540,6 +582,7 @@ function normalizeStatus(status) {
   const labelMap = {
     ok: 'OK',
     error: 'ERROR',
+    warning: 'WARNING',
     disabled: 'DISABLED',
     unauthenticated: 'UNAUTH',
     timeout: 'TIMEOUT',

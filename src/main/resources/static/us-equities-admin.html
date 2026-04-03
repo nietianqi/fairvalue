@@ -55,6 +55,8 @@
           <button class="secondary" id="retryGlobalJobsBtn" type="button">重试全局失败任务</button>
           <button class="ghost" id="recoverStaleBtn" type="button">恢复卡住任务</button>
           <button class="ghost" id="universeBtn" type="button">Universe Sync</button>
+          <button class="ghost" id="top50BackfillBtn" type="button">Top 50 Backfill</button>
+          <button class="ghost" id="universeBackfillBtn" type="button">Top 100 Queue</button>
         </div>
 
         <div class="status-box" id="statusBox">等待操作</div>
@@ -72,6 +74,19 @@
             <span class="subtle" id="sourceAsOf">-</span>
           </div>
           <div class="source-card-grid" id="sourceCards"></div>
+        </div>
+
+        <div class="source-status-panel">
+          <div class="section-title-row">
+            <h3>严格榜单覆盖率</h3>
+            <span class="subtle" id="rankingMode">-</span>
+          </div>
+          <div class="mini-grid" id="rankingCoverageCards">
+            <article class="mini-card"><span>Universe</span><strong>-</strong></article>
+            <article class="mini-card"><span>Snapshots</span><strong>-</strong></article>
+            <article class="mini-card"><span>Rankable</span><strong>-</strong></article>
+            <article class="mini-card"><span>Coverage</span><strong>-</strong></article>
+          </div>
         </div>
 
         <div class="source-status-panel">

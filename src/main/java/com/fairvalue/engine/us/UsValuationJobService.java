@@ -63,6 +63,10 @@ public class UsValuationJobService {
         return valuationJobRepository.insertQueued(JOB_TYPE, securityId, toJson(basePayload(ticker, trigger)), priority, availableAt);
     }
 
+    public long enqueueBulkRefresh(String ticker, String trigger, int priority, Instant availableAt) {
+        return enqueueScheduledRefresh(ticker, trigger, priority, availableAt);
+    }
+
     public boolean hasOpenJob(String ticker) {
         long securityId = usSecurityMasterService.resolveSecurityId(ticker)
                 .orElseThrow(() -> new IllegalStateException("Ticker " + ticker + " does not exist in security master."));

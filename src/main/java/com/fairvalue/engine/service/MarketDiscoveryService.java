@@ -594,61 +594,65 @@ public class MarketDiscoveryService {
         }
 
         UsSecurityMaster security = targetSecurity.get();
-        StockSnapshot targetSnapshot = marketDataService.getSnapshot(Market.US, normalizedTicker);
-        Map<String, UsRelativePeerComparable> candidateMap = loadUsPeerCandidates(security);
-        Map<String, UsStoredValuationSnapshotRecord> storedSnapshotMap = valuationLatestSnapshotRepository.findAllByMarket(Market.US.name()).stream()
-                .collect(Collectors.toMap(
-                        record -> record.ticker().toUpperCase(Locale.ROOT),
-                        Function.identity(),
-                        (left, right) -> left,
-                        LinkedHashMap::new
-                ));
-        UsConfiguredValuationModelsService.RelativePeerSelectionView selection =
-                usConfiguredValuationModelsService.selectRelativePeersReadOnly(
-                        usConfiguredValuationModelsService.loadContext(targetSnapshot, security),
-                        limit
-                );
+        try {
+            StockSnapshot targetSnapshot = marketDataService.getSnapshot(Market.US, normalizedTicker);
+            Map<String, UsRelativePeerComparable> candidateMap = loadUsPeerCandidates(security);
+            Map<String, UsStoredValuationSnapshotRecord> storedSnapshotMap = valuationLatestSnapshotRepository.findAllByMarket(Market.US.name()).stream()
+                    .collect(Collectors.toMap(
+                            record -> record.ticker().toUpperCase(Locale.ROOT),
+                            Function.identity(),
+                            (left, right) -> left,
+                            LinkedHashMap::new
+                    ));
+            UsConfiguredValuationModelsService.RelativePeerSelectionView selection =
+                    usConfiguredValuationModelsService.selectRelativePeersReadOnly(
+                            usConfiguredValuationModelsService.loadContext(targetSnapshot, security),
+                            limit
+                    );
 
-        List<String> peerTickers = selection.peers().stream()
-                .map(UsRelativePeerComparable::ticker)
-                .toList();
-        Map<String, Long> selectionBreakdown = selection.selectionBreakdown();
-        List<String> filterMetrics = selection.filterMetrics();
-        String selectionBasis = selection.selectionBasis();
-        String sourceMode = selection.sourceMode();
-        String peerSetSource = selection.peerSetSource();
-        Integer peerCandidateCount = selection.candidateCount();
-        String ruleVersion = selection.ruleVersion();
-        String filterSummary = selection.filterSummary();
+            List<String> peerTickers = selection.peers().stream()
+                    .map(UsRelativePeerComparable::ticker)
+                    .toList();
+            Map<String, Long> selectionBreakdown = selection.selectionBreakdown();
+            List<String> filterMetrics = selection.filterMetrics();
+            String selectionBasis = selection.selectionBasis();
+            String sourceMode = selection.sourceMode();
+            String peerSetSource = selection.peerSetSource();
+            Integer peerCandidateCount = selection.candidateCount();
+            String ruleVersion = selection.ruleVersion();
+            String filterSummary = selection.filterSummary();
 
-        List<MarketPeerItem> items = peerTickers.stream()
-                .limit(limit)
-                .map(peerTicker -> toUsPeerItem(
-                        peerTicker,
-                        security,
-                        candidateMap.get(peerTicker.toUpperCase(Locale.ROOT)),
-                        storedSnapshotMap.get(peerTicker.toUpperCase(Locale.ROOT))
-                ))
-                .toList();
+            List<MarketPeerItem> items = peerTickers.stream()
+                    .limit(limit)
+                    .map(peerTicker -> toUsPeerItem(
+                            peerTicker,
+                            security,
+                            candidateMap.get(peerTicker.toUpperCase(Locale.ROOT)),
+                            storedSnapshotMap.get(peerTicker.toUpperCase(Locale.ROOT))
+                    ))
+                    .toList();
 
-        if (items.isEmpty()) {
-            return fallbackUsSnapshotPeers(normalizedTicker, security, limit, "no_clean_peer_set");
+            if (items.isEmpty()) {
+                return fallbackUsSnapshotPeers(normalizedTicker, security, limit, "no_clean_peer_set");
+            }
+
+            return new MarketPeersResponse(
+                    Market.US.name(),
+                    normalizedTicker,
+                    firstNonBlank(selectionBasis, items.isEmpty() ? "template_only" : "mixed"),
+                    selection.selectionMode(),
+                    firstNonBlank(sourceMode, items.isEmpty() ? "template_only" : "peer_set_plus_template"),
+                    firstNonBlank(peerSetSource, items.isEmpty() ? "template_only" : US_PEER_SOURCE),
+                    peerCandidateCount == null ? candidateMap.size() : peerCandidateCount,
+                    firstNonBlank(ruleVersion, items.isEmpty() ? null : "v3_industry_specific"),
+                    firstNonBlank(filterSummary, items.isEmpty() ? "no_clean_peer_set" : "strict_us_peer_selection"),
+                    selectionBreakdown,
+                    filterMetrics.isEmpty() ? DEFAULT_US_PEER_FILTER_METRICS : filterMetrics,
+                    items
+            );
+        } catch (RuntimeException ex) {
+            return fallbackUsSnapshotPeers(normalizedTicker, security, limit, "strict_peer_selection_error:" + ex.getClass().getSimpleName());
         }
-
-        return new MarketPeersResponse(
-                Market.US.name(),
-                normalizedTicker,
-                firstNonBlank(selectionBasis, items.isEmpty() ? "template_only" : "mixed"),
-                selection.selectionMode(),
-                firstNonBlank(sourceMode, items.isEmpty() ? "template_only" : "peer_set_plus_template"),
-                firstNonBlank(peerSetSource, items.isEmpty() ? "template_only" : US_PEER_SOURCE),
-                peerCandidateCount == null ? candidateMap.size() : peerCandidateCount,
-                firstNonBlank(ruleVersion, items.isEmpty() ? null : "v3_industry_specific"),
-                firstNonBlank(filterSummary, items.isEmpty() ? "no_clean_peer_set" : "strict_us_peer_selection"),
-                selectionBreakdown,
-                filterMetrics.isEmpty() ? DEFAULT_US_PEER_FILTER_METRICS : filterMetrics,
-                items
-        );
     }
 
     private MarketPeersResponse fallbackUsSnapshotPeers(String ticker, UsSecurityMaster targetSecurity, int limit, String reason) {
@@ -721,6 +725,9 @@ public class MarketDiscoveryService {
     }
 
     private Map<String, UsRelativePeerComparable> loadUsPeerCandidates(UsSecurityMaster targetSecurity) {
+        if (targetSecurity == null || targetSecurity.id() == null) {
+            return Map.of();
+        }
         return usSecurityMasterService.findRelativePeers(targetSecurity.id(), targetSecurity, 48).stream()
                 .collect(Collectors.toMap(
                         peer -> peer.ticker().toUpperCase(Locale.ROOT),

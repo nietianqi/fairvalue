@@ -4,6 +4,8 @@ import com.fairvalue.engine.api.dto.ApiEnvelope;
 import com.fairvalue.engine.config.ApiPlatformFilter;
 import com.fairvalue.engine.config.ApiPlatformProperties;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -17,6 +19,7 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
     private final ApiPlatformProperties properties;
 
     public ApiExceptionHandler(ApiPlatformProperties properties) {
@@ -25,11 +28,13 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<?> handleBadRequest(IllegalArgumentException ex, HttpServletRequest request) {
+        log.warn("API bad request on {}: {}", request.getRequestURI(), ex.getMessage());
         return build(HttpStatus.BAD_REQUEST, "bad_request", ex.getMessage(), request);
     }
 
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<?> handleIllegalState(IllegalStateException ex, HttpServletRequest request) {
+        log.warn("API illegal state on {}: {}", request.getRequestURI(), ex.getMessage());
         return build(HttpStatus.BAD_REQUEST, "illegal_state", ex.getMessage(), request);
     }
 
@@ -39,11 +44,13 @@ public class ApiExceptionHandler {
                 .findFirst()
                 .map(error -> error.getField() + " " + error.getDefaultMessage())
                 .orElse("Invalid request body.");
+        log.warn("API validation error on {}: {}", request.getRequestURI(), message);
         return build(HttpStatus.BAD_REQUEST, "validation_error", message, request);
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<?> handleGeneric(Exception ex, HttpServletRequest request) {
+        log.error("API internal error on {}", request.getRequestURI(), ex);
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "internal_error", ex.getMessage(), request);
     }
 

@@ -281,6 +281,7 @@ button:disabled { opacity: 0.62; cursor: wait; transform: none; }
 }
 
 .status-ok { background: #e8f7ee; color: var(--good); }
+.status-warning { background: #fff7e6; color: var(--warn); }
 .status-disabled { background: #eef1f4; color: var(--muted); }
 .status-timeout, .status-unauthenticated { background: #fff7e6; color: var(--warn); }
 .status-error { background: #fff0ee; color: var(--danger); }

@@ -366,7 +366,7 @@ public class MarketDataService {
 
         double capScore = marketCapScore(resolvedMarketCap > 0 ? resolvedMarketCap : null, base.liquidityScore());
         double volumeScore = volumeScore(
-                longbridge != null && longbridge.volume() > 0 ? longbridge.volume() : quote == null ? null : quote.volume(),
+                resolvedUsVolume(longbridge, quote),
                 base.liquidityScore()
         );
         double resolvedLiquidity = clamp(base.liquidityScore() * 0.25 + capScore * 0.35 + volumeScore * 0.40, 0.18, 0.99);
@@ -686,6 +686,16 @@ public class MarketDataService {
             return fallback;
         }
         return clamp((Math.log10(volume) - 5.0) / 3.0, 0.20, 1.0);
+    }
+
+    private Long resolvedUsVolume(UsLongbridgeClient.UsLongbridgeMarketData longbridge, UsStooqClient.UsQuote quote) {
+        if (longbridge != null && longbridge.volume() > 0) {
+            return longbridge.volume();
+        }
+        if (quote != null && quote.volume() > 0) {
+            return quote.volume();
+        }
+        return null;
     }
 
     private String usDataVersion(

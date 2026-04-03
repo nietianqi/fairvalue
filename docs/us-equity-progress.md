@@ -266,7 +266,17 @@
    - 最近一次 live：`completed = 38`
    - `missing_in_security_master = 12`
    - `failed = 0`
-29. embedded PostgreSQL 当前已支持复用现有 `5432` 实例：
+29. `POST /v1/us-equities-admin/snapshot-backfill/universe?page=1&size=100&mode=queue` 当前已可批量把 US universe 页面加入估值队列：
+   - 适合用来提升 `valuation_latest_snapshot` 覆盖率
+   - 默认建议：`page=1,size=100,mode=queue,priority=220`
+30. `us-equities-admin.html` 当前已补：
+   - `Top 50 Backfill` 按钮
+   - `Top 100 Queue` 按钮
+   - `严格榜单覆盖率` 卡片（Universe / Snapshots / Rankable / Coverage）
+31. `UsSnapshotBackfillService` 当前支持两种模式：
+   - `run`：立即执行估值并落快照
+   - `queue`：仅入队，由 worker 异步处理
+32. embedded PostgreSQL 当前已支持复用现有 `5432` 实例：
    - 本地测试和开发服务不再因为重复 `initdb` 直接失败
    且旧 `GET /api/jp/stocks/*` 已返回 `302` redirect
 
