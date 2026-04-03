@@ -6,6 +6,9 @@ import com.fairvalue.engine.domain.Market;
 import com.fairvalue.engine.domain.StockFundamentals;
 import com.fairvalue.engine.domain.StockSnapshot;
 import com.fairvalue.engine.domain.ValuationStatus;
+import com.fairvalue.engine.repository.MarketPriceDailyRepository;
+import com.fairvalue.engine.repository.ValuationLatestSnapshotRepository;
+import com.fairvalue.engine.repository.ValuationRunsRepository;
 import com.fairvalue.engine.valuation.ExplainResult;
 import com.fairvalue.engine.valuation.HistoryPoint;
 import com.fairvalue.engine.valuation.MarketAdjustment;
@@ -14,6 +17,10 @@ import com.fairvalue.engine.valuation.ModelValuation;
 import com.fairvalue.engine.valuation.ScenarioPoint;
 import com.fairvalue.engine.valuation.ScenarioResult;
 import com.fairvalue.engine.valuation.ValuationResult;
+import com.fairvalue.engine.us.UsMarketPriceDailyRecord;
+import com.fairvalue.engine.us.UsSecurityMasterService;
+import com.fairvalue.engine.us.UsStoredValuationSnapshotRecord;
+import com.fairvalue.engine.us.UsValuationRunHistoryRecord;
 import com.fairvalue.engine.valuation.strategy.MarketStrategyRegistry;
 import com.fairvalue.engine.valuation.strategy.MathSupport;
 import org.springframework.stereotype.Service;
@@ -29,14 +36,33 @@ import java.util.Map;
 public class ValuationService {
     private final MarketDataService marketDataService;
     private final MarketStrategyRegistry strategyRegistry;
+    private final UsSecurityMasterService usSecurityMasterService;
+    private final MarketPriceDailyRepository marketPriceDailyRepository;
+    private final ValuationRunsRepository valuationRunsRepository;
+    private final ValuationLatestSnapshotRepository valuationLatestSnapshotRepository;
 
-    public ValuationService(MarketDataService marketDataService, MarketStrategyRegistry strategyRegistry) {
+    public ValuationService(
+            MarketDataService marketDataService,
+            MarketStrategyRegistry strategyRegistry,
+            UsSecurityMasterService usSecurityMasterService,
+            MarketPriceDailyRepository marketPriceDailyRepository,
+            ValuationRunsRepository valuationRunsRepository,
+            ValuationLatestSnapshotRepository valuationLatestSnapshotRepository
+    ) {
         this.marketDataService = marketDataService;
         this.strategyRegistry = strategyRegistry;
+        this.usSecurityMasterService = usSecurityMasterService;
+        this.marketPriceDailyRepository = marketPriceDailyRepository;
+        this.valuationRunsRepository = valuationRunsRepository;
+        this.valuationLatestSnapshotRepository = valuationLatestSnapshotRepository;
     }
 
     public ValuationResult valuate(Market market, String symbol) {
         return runValuation(market, symbol).result();
+    }
+
+    public ValuationResult valuate(StockSnapshot snapshot) {
+        return runValuation(snapshot).result();
     }
 
     public List<ValuationResult> batchValuate(List<MarketSymbol> items) {
@@ -109,6 +135,12 @@ public class ValuationService {
 
     public List<HistoryPoint> history(Market market, String symbol, int days) {
         int boundedDays = Math.max(30, Math.min(days, 720));
+        if (market == Market.US) {
+            List<HistoryPoint> persisted = historyFromPersistedUsData(symbol, boundedDays);
+            if (!persisted.isEmpty()) {
+                return persisted;
+            }
+        }
         ValuationResult current = valuate(market, symbol);
         List<HistoryPoint> points = new ArrayList<>(boundedDays);
 
@@ -124,10 +156,63 @@ public class ValuationService {
                     LocalDate.now().minusDays(offset),
                     MathSupport.round(closePrice),
                     MathSupport.round(fairValue),
-                    MathSupport.round(deviation)
+                    MathSupport.round(deviation),
+                    null,
+                    null,
+                    true
             ));
         }
 
+        return points;
+    }
+
+    private List<HistoryPoint> historyFromPersistedUsData(String symbol, int boundedDays) {
+        Long securityId = usSecurityMasterService.resolveSecurityId(symbol).orElse(null);
+        if (securityId == null) {
+            return List.of();
+        }
+
+        List<UsMarketPriceDailyRecord> priceHistory = marketPriceDailyRepository.findRecentHistoryBySecurityId(securityId, boundedDays);
+        if (priceHistory.isEmpty()) {
+            return List.of();
+        }
+
+        List<UsValuationRunHistoryRecord> valuationHistory = valuationRunsRepository.findRecentHistoryBySecurityId(
+                securityId,
+                Math.max(12, Math.min(180, boundedDays))
+        );
+
+        double fallbackFairValue = valuationHistory.isEmpty()
+                ? valuationLatestSnapshotRepository.findByTicker(normalizeTicker(symbol))
+                    .map(UsStoredValuationSnapshotRecord::fairValueMid)
+                    .orElse(0.0)
+                : valuationHistory.get(valuationHistory.size() - 1).fairValueMid();
+
+        List<HistoryPoint> points = new ArrayList<>(priceHistory.size());
+        UsValuationRunHistoryRecord currentRun = null;
+        int valuationIndex = 0;
+        for (UsMarketPriceDailyRecord priceRecord : priceHistory) {
+            while (valuationIndex < valuationHistory.size()
+                    && !valuationHistory.get(valuationIndex).valuationDate().isAfter(priceRecord.tradeDate())) {
+                currentRun = valuationHistory.get(valuationIndex);
+                valuationIndex += 1;
+            }
+
+            double fairValue = currentRun == null ? fallbackFairValue : currentRun.fairValueMid();
+            double closePrice = priceRecord.close() == null ? 0.0 : priceRecord.close().doubleValue();
+            if (fairValue <= 0.0 || closePrice <= 0.0) {
+                continue;
+            }
+            points.add(new HistoryPoint(
+                    priceRecord.tradeDate(),
+                    MathSupport.round(closePrice),
+                    MathSupport.round(fairValue),
+                    MathSupport.round(closePrice / fairValue - 1.0),
+                    currentRun == null ? null : currentRun.valuationRunDate(),
+                    currentRun == null ? null : currentRun.runId(),
+                    false
+            ));
+        }
         return points;
     }
 
@@ -140,12 +225,61 @@ public class ValuationService {
         boolean requirePositiveFcf = Boolean.TRUE.equals(request.requirePositiveFcf());
         int limit = request.limit() == null ? 20 : Math.min(request.limit(), 100);
 
-        return marketDataService.listSnapshots(markets).stream()
+        List<ValuationResult> results = new ArrayList<>();
+        if (markets.contains(Market.US)) {
+            results.addAll(usScreener(minUndervalued, minRoe, maxPb, minDividend, requirePositiveFcf, limit));
+        }
+
+        results.addAll(marketDataService.listSnapshots(markets.stream().filter(market -> market != Market.US).toList()).stream()
                 .filter(snapshot -> snapshot.fundamentals().roe() >= minRoe)
                 .filter(snapshot -> snapshot.fundamentals().pb() <= maxPb)
                 .filter(snapshot -> snapshot.fundamentals().dividendYield() >= minDividend)
                 .filter(snapshot -> !requirePositiveFcf || snapshot.fundamentals().positiveFreeCashFlow())
-                .map(snapshot -> valuate(snapshot.market(), snapshot.symbol()))
+                .map(this::valuate)
+                .filter(valuation -> valuation.upside() >= minUndervalued)
+                .toList());
+
+        return results.stream()
+                .sorted(Comparator.comparingDouble(ValuationResult::upside).reversed()
+                        .thenComparing(Comparator.comparingDouble(ValuationResult::confidence).reversed()))
+                .limit(limit)
+                .toList();
+    }
+
+    private List<ValuationResult> usScreener(
+            double minUndervalued,
+            double minRoe,
+            double maxPb,
+            double minDividend,
+            boolean requirePositiveFcf,
+            int limit
+    ) {
+        List<StockSnapshot> snapshots = marketDataService.listSnapshots(List.of(Market.US));
+        Map<String, UsStoredValuationSnapshotRecord> storedByTicker = valuationLatestSnapshotRepository.findAllByMarket(Market.US.name()).stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        snapshot -> normalizeTicker(snapshot.ticker()),
+                        snapshot -> snapshot,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+
+        Map<String, StockSnapshot> snapshotByTicker = snapshots.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        snapshot -> normalizeTicker(snapshot.symbol()),
+                        snapshot -> snapshot,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+
+        return snapshots.stream()
+                .filter(snapshot -> snapshot.fundamentals().roe() >= minRoe)
+                .filter(snapshot -> snapshot.fundamentals().pb() <= maxPb)
+                .filter(snapshot -> snapshot.fundamentals().dividendYield() >= minDividend)
+                .filter(snapshot -> !requirePositiveFcf || snapshot.fundamentals().positiveFreeCashFlow())
+                .map(snapshot -> {
+                    UsStoredValuationSnapshotRecord stored = storedByTicker.get(normalizeTicker(snapshot.symbol()));
+                    return stored == null ? quickUsSnapshotValuation(snapshot) : storedValuationResult(snapshot, stored);
+                })
                 .filter(valuation -> valuation.upside() >= minUndervalued)
                 .sorted(Comparator.comparingDouble(ValuationResult::upside).reversed()
                         .thenComparing(Comparator.comparingDouble(ValuationResult::confidence).reversed()))
@@ -155,7 +289,11 @@ public class ValuationService {
 
     private EngineOutput runValuation(Market market, String symbol) {
         StockSnapshot snapshot = marketDataService.getSnapshot(market, symbol);
-        MarketComputation computation = strategyRegistry.get(market).evaluate(snapshot);
+        return runValuation(snapshot);
+    }
+
+    private EngineOutput runValuation(StockSnapshot snapshot) {
+        MarketComputation computation = strategyRegistry.get(snapshot.market()).evaluate(snapshot);
 
         double intrinsic = computation.models().stream()
                 .mapToDouble(model -> model.value() * model.weight())
@@ -180,7 +318,7 @@ public class ValuationService {
         double upside = tradable / snapshot.price() - 1.0;
 
         ValuationResult result = new ValuationResult(
-                market,
+                snapshot.market(),
                 snapshot.symbol(),
                 snapshot.currency(),
                 MathSupport.round(snapshot.price()),
@@ -263,6 +401,105 @@ public class ValuationService {
             return List.of(Market.US, Market.CN, Market.JP, Market.HK);
         }
         return rawMarkets.stream().map(Market::from).toList();
+    }
+
+    private ValuationResult storedValuationResult(StockSnapshot snapshot, UsStoredValuationSnapshotRecord stored) {
+        return new ValuationResult(
+                snapshot.market(),
+                snapshot.symbol(),
+                snapshot.currency(),
+                MathSupport.round(stored.currentPrice()),
+                stored.asOfTime().atZone(java.time.ZoneId.systemDefault()).toLocalDate(),
+                MathSupport.round(stored.fairValueMid()),
+                MathSupport.round(stored.fairValueMid()),
+                MathSupport.round(stored.fairValueLow()),
+                MathSupport.round(stored.fairValueHigh()),
+                MathSupport.round(stored.upsidePct()),
+                MathSupport.round(stored.confidenceLevel()),
+                valuationStatusFromStored(stored),
+                List.of(),
+                Map.of(),
+                List.of(),
+                List.of(),
+                stored.dataVersion()
+        );
+    }
+
+    private ValuationStatus valuationStatusFromStored(UsStoredValuationSnapshotRecord stored) {
+        if (stored.finalVerdict() == null || stored.finalVerdict().isBlank()) {
+            return ValuationStatus.fromUpside(stored.upsidePct());
+        }
+        String normalized = stored.finalVerdict().toLowerCase(java.util.Locale.ROOT);
+        if (normalized.contains("under")) {
+            return stored.upsidePct() >= 0.20 ? ValuationStatus.DEEP_UNDERVALUE : ValuationStatus.SLIGHTLY_UNDERVALUE;
+        }
+        if (normalized.contains("over")) {
+            return stored.upsidePct() <= -0.20 ? ValuationStatus.DEEP_OVERVALUE : ValuationStatus.SLIGHTLY_OVERVALUE;
+        }
+        return ValuationStatus.FAIR;
+    }
+
+    private ValuationResult quickUsSnapshotValuation(StockSnapshot snapshot) {
+        StockFundamentals fundamentals = snapshot.fundamentals();
+        double qualityMultiplier = MathSupport.clamp(
+                0.92
+                        + fundamentals.revenueGrowth() * 0.55
+                        + fundamentals.fcfMargin() * 0.60
+                        + fundamentals.roe() * 0.35
+                        + fundamentals.netCashToMarketCap() * 0.18
+                        + fundamentals.themePremium() * 0.10
+                        - fundamentals.wacc() * 0.95
+                        - fundamentals.earningsVolatility() * 0.32,
+                0.68,
+                1.58
+        );
+        double terminalSupport = MathSupport.clamp(
+                1.0 + fundamentals.terminalGrowth() * 3.2 + fundamentals.dividendYield() * 0.45,
+                0.92,
+                1.18
+        );
+        double fairValueMid = snapshot.price() * qualityMultiplier * terminalSupport;
+        double confidence = MathSupport.clamp(
+                fundamentals.dataCompleteness() * 0.35
+                        + MathSupport.clamp(1.0 - fundamentals.dataFreshnessDays() / 60.0, 0.20, 1.0) * 0.20
+                        + fundamentals.liquidityScore() * 0.15
+                        + fundamentals.analystCoverage() * 0.15
+                        + fundamentals.governanceScore() * 0.15,
+                0.25,
+                0.95
+        );
+        double band = MathSupport.clamp(
+                0.10 + (1.0 - confidence) * 0.18 + fundamentals.earningsVolatility() * 0.10,
+                0.10,
+                0.34
+        );
+        double fairValueLow = fairValueMid * (1.0 - band);
+        double fairValueHigh = fairValueMid * (1.0 + band);
+        double upside = fairValueMid / Math.max(snapshot.price(), 0.1) - 1.0;
+
+        return new ValuationResult(
+                snapshot.market(),
+                snapshot.symbol(),
+                snapshot.currency(),
+                MathSupport.round(snapshot.price()),
+                LocalDate.now(),
+                MathSupport.round(fairValueMid),
+                MathSupport.round(fairValueMid),
+                MathSupport.round(fairValueLow),
+                MathSupport.round(fairValueHigh),
+                MathSupport.round(upside),
+                MathSupport.round(confidence),
+                ValuationStatus.fromUpside(upside),
+                List.of(),
+                Map.of(),
+                List.of(),
+                List.of(),
+                snapshot.dataVersion()
+        );
+    }
+
+    private String normalizeTicker(String rawTicker) {
+        return rawTicker.trim().toUpperCase(java.util.Locale.ROOT).replace(".US", "").replace(".", "-");
     }
 
     public record MarketSymbol(Market market, String symbol) {

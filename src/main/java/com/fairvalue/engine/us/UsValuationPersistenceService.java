@@ -5,7 +5,11 @@ import com.fairvalue.engine.api.dto.us.UsFairValueRange;
 import com.fairvalue.engine.api.dto.us.UsMethodOutput;
 import com.fairvalue.engine.api.dto.us.UsRiskItem;
 import com.fairvalue.engine.api.dto.us.UsScenarioOutput;
+import com.fairvalue.engine.api.dto.us.UsValuationDecisionResponse;
+import com.fairvalue.engine.api.dto.us.UsValuationExplanationResponse;
+import com.fairvalue.engine.api.dto.us.UsValuationReportResponse;
 import com.fairvalue.engine.api.dto.us.UsValuationRunRequest;
+import com.fairvalue.engine.api.dto.us.UsValuationSummaryResponse;
 import com.fairvalue.engine.domain.StockSnapshot;
 import com.fairvalue.engine.repository.FinancialDerivedMetricsRepository;
 import com.fairvalue.engine.repository.MarketPriceDailyRepository;
@@ -14,6 +18,7 @@ import com.fairvalue.engine.repository.ReportBlocksRepository;
 import com.fairvalue.engine.repository.ReverseDcfResultsRepository;
 import com.fairvalue.engine.repository.RiskScoresRepository;
 import com.fairvalue.engine.repository.ScenarioResultsRepository;
+import com.fairvalue.engine.repository.ValuationLatestSnapshotRepository;
 import com.fairvalue.engine.repository.ValuationMethodResultsRepository;
 import com.fairvalue.engine.repository.ValuationRunsRepository;
 import com.fairvalue.engine.valuation.ValuationResult;
@@ -38,6 +43,7 @@ public class UsValuationPersistenceService {
     private final MarketPriceDailyRepository marketPriceDailyRepository;
     private final MarketSnapshotRepository marketSnapshotRepository;
     private final ValuationRunsRepository valuationRunsRepository;
+    private final ValuationLatestSnapshotRepository valuationLatestSnapshotRepository;
     private final ValuationMethodResultsRepository valuationMethodResultsRepository;
     private final ScenarioResultsRepository scenarioResultsRepository;
     private final ReverseDcfResultsRepository reverseDcfResultsRepository;
@@ -51,6 +57,7 @@ public class UsValuationPersistenceService {
             MarketPriceDailyRepository marketPriceDailyRepository,
             MarketSnapshotRepository marketSnapshotRepository,
             ValuationRunsRepository valuationRunsRepository,
+            ValuationLatestSnapshotRepository valuationLatestSnapshotRepository,
             ValuationMethodResultsRepository valuationMethodResultsRepository,
             ScenarioResultsRepository scenarioResultsRepository,
             ReverseDcfResultsRepository reverseDcfResultsRepository,
@@ -63,6 +70,7 @@ public class UsValuationPersistenceService {
         this.marketPriceDailyRepository = marketPriceDailyRepository;
         this.marketSnapshotRepository = marketSnapshotRepository;
         this.valuationRunsRepository = valuationRunsRepository;
+        this.valuationLatestSnapshotRepository = valuationLatestSnapshotRepository;
         this.valuationMethodResultsRepository = valuationMethodResultsRepository;
         this.scenarioResultsRepository = scenarioResultsRepository;
         this.reverseDcfResultsRepository = reverseDcfResultsRepository;
@@ -87,7 +95,14 @@ public class UsValuationPersistenceService {
             double marginOfSafety,
             UsReverseDcfAnalysis reverseDcfAnalysis,
             String finalVerdict,
-            UsSecurityMaster classified
+            UsSecurityMaster classified,
+            String runMode,
+            UsValuationSummaryResponse summary,
+            UsValuationDecisionResponse decision,
+            UsValuationExplanationResponse explanation,
+            UsValuationReportResponse report,
+            Double qualityScore,
+            Double dataQualityScore
     ) {
         Long securityId = classified != null && classified.id() != null
                 ? classified.id()
@@ -122,7 +137,7 @@ public class UsValuationPersistenceService {
         long runId = valuationRunsRepository.insert(new UsValuationRunRecord(
                 securityId,
                 Instant.now(),
-                "api",
+                runMode,
                 snapshot.price(),
                 fairValueRange.low(),
                 fairValueRange.mid(),
@@ -141,7 +156,7 @@ public class UsValuationPersistenceService {
                 holdZone.high(),
                 avoidZone.low(),
                 avoidZone.high(),
-                buildReportJson(rawTicker, request, snapshot, base, selectedMethods, methodOutputs, dailyHistory, snapshotHistory)
+                report == null ? "{}" : toJson(report)
         ));
 
         valuationMethodResultsRepository.insertAll(buildMethodResults(
@@ -153,6 +168,30 @@ public class UsValuationPersistenceService {
         reverseDcfResultsRepository.upsert(buildReverseDcfResult(runId, reverseDcfAnalysis));
         riskScoresRepository.insertAll(buildRiskScores(runId, securityId, risks));
         reportBlocksRepository.insertAll(buildReportBlocks(runId, explanationBlocks, risks, methodOutputs, scenarios));
+        valuationLatestSnapshotRepository.upsert(new UsValuationLatestSnapshotRecord(
+                securityId,
+                snapshot.market().name(),
+                runId,
+                Instant.now(),
+                snapshot.price(),
+                fairValueRange.low(),
+                fairValueRange.mid(),
+                fairValueRange.high(),
+                MathSupport.round(fairValueRange.mid() / Math.max(snapshot.price(), 0.1) - 1.0),
+                confidenceLevel,
+                marginOfSafety,
+                finalVerdict,
+                reverseDcfAnalysis == null ? null : reverseDcfAnalysis.impliedExpectationLabel(),
+                decision != null && decision.valueTrapFlag(),
+                classified == null ? null : classified.sectorTemplate(),
+                classified == null ? null : classified.companyType(),
+                qualityScore,
+                dataQualityScore,
+                snapshot.dataVersion(),
+                summary == null ? "{}" : toJson(summary),
+                report == null ? "{}" : toJson(report),
+                decision == null ? "{}" : toJson(decision.sourceAttribution())
+        ));
         return OptionalLong.of(runId);
     }
 
@@ -285,34 +324,6 @@ public class UsValuationPersistenceService {
         records.add(new UsReportBlockRecord(runId, "valuation_breakdown", toJson(Map.of("methods", methodOutputs)), order++));
         records.add(new UsReportBlockRecord(runId, "scenario_matrix", toJson(Map.of("scenarios", scenarios)), order));
         return records;
-    }
-
-    private String buildReportJson(
-            String rawTicker,
-            UsValuationRunRequest request,
-            StockSnapshot snapshot,
-            ValuationResult base,
-            List<UsConfiguredMethodValuation> selectedMethods,
-            List<UsMethodOutput> methodOutputs,
-            List<UsMarketPriceDailyRecord> dailyHistory,
-            List<UsMarketSnapshotRecord> snapshotHistory
-    ) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("ticker", normalizeTicker(rawTicker));
-        payload.put("data_version", snapshot.dataVersion());
-        payload.put("request", request);
-        payload.put("valuation_status", base.valuationStatus().name());
-        payload.put("risk_flags", base.riskFlags());
-        payload.put("drivers", base.drivers());
-        payload.put("selected_models", selectedMethods.stream().map(UsConfiguredMethodValuation::method).toList());
-        payload.put("method_outputs", methodOutputs);
-        payload.put("market_daily_rows", dailyHistory.size());
-        payload.put("market_snapshot_rows", snapshotHistory.size());
-        return toJson(payload);
-    }
-
-    private String normalizeTicker(String rawTicker) {
-        return rawTicker.trim().toUpperCase(Locale.ROOT).replace(".US", "").replace(".", "-");
     }
 
     private String toJson(Object value) {

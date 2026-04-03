@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>&#x88AB;&#x4F4E;&#x4F30;&#x7684;&#x5168;&#x7403;&#x80A1;&#x7968;</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/cn-undervalued.css?v=20260402-review2" />
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <div class="title-row">
+        <h1>&#x88AB;&#x4F4E;&#x4F30;&#x7684;&#x5168;&#x7403;&#x80A1;&#x7968;</h1>
+        <span class="hint" title="基于多模型加权估值与市场修正">i</span>
+      </div>
+
+      <div class="controls">
+        <label class="country-select" for="country">
+          <select id="country" aria-label="市场选择">
+            <option value="CN" selected>中国 A 股</option>
+            <option value="HK">香港股票</option>
+            <option value="JP">日本股票</option>
+            <option value="US">美国股票</option>
+          </select>
+        </label>
+        <div class="utility-links">
+          <a class="utility-link" href="/valuation-screener.html">估值筛选器</a>
+          <a class="utility-link" href="/us-stock-detail.html?ticker=AAPL">美股详情示例</a>
+          <a class="utility-link ghost" href="/us-equities-admin.html">US Admin</a>
+        </div>
+      </div>
+
+      <nav class="tabs" aria-label="排序维度">
+        <button class="tab active" data-mode="undervalued">最被低估</button>
+        <button class="tab" data-mode="overvalued">最被高估</button>
+        <button class="tab" data-mode="high52">52周高点</button>
+        <button class="tab" data-mode="low52">52周低点</button>
+        <button class="tab" data-mode="active">最近活跃股票</button>
+        <button class="tab" data-mode="gainers">涨幅排行</button>
+        <button class="tab" data-mode="losers">跌幅排行</button>
+      </nav>
+    </header>
+
+    <section class="table-wrap">
+      <table id="stocksTable">
+        <thead>
+          <tr>
+            <th data-sort="name">名称</th>
+            <th data-sort="price">价格</th>
+            <th data-sort="upside">看涨</th>
+            <th data-sort="fairValue">公允价值</th>
+            <th data-sort="financialScore">财务稳健</th>
+            <th data-sort="cashflowScore">现金流评级</th>
+            <th data-sort="growthScore">成长评级</th>
+            <th data-sort="profitabilityScore">盈利能力评级</th>
+            <th data-sort="ratingScore">分析师评级</th>
+            <th data-sort="pe">市盈率</th>
+            <th data-sort="evEbitda">EV/EBITDA</th>
+            <th data-sort="marketCap">市值</th>
+            <th data-sort="eps5y">每股收益增长率 (5年)</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+          <tr><td class="loading" colspan="13">正在载入估值数据...</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer class="footnote">
+      数据来源：Fairvalue Engine（多模型 + 情景 + 风险修正）
+    </footer>
+  </main>
+
+  <script src="/assets/platform-client.js?v=20260403-platformfix" defer></script>
+  <script src="/assets/cn-undervalued.js?v=20260403-platform" defer></script>
+</body>
+</html>

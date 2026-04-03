@@ -62,14 +62,39 @@ public class UsSecurityMasterService {
         return securityMasterRepository.findById(securityId);
     }
 
+    public long countActiveUsUniverse() {
+        return securityMasterRepository.countActiveByCountry("US");
+    }
+
+    public List<UsSecurityMaster> findActiveUsUniversePage(int page, int size) {
+        int resolvedPage = Math.max(page, 1);
+        int resolvedSize = Math.max(1, size);
+        int offset = Math.max((resolvedPage - 1) * resolvedSize, 0);
+        return securityMasterRepository.findActiveByCountry("US", resolvedSize, offset);
+    }
+
+    public List<String> findScheduledUniverseTickers(int maxSymbols) {
+        return securityMasterRepository.findActiveTickersByCountry("US", maxSymbols);
+    }
+
     public List<UsRelativePeerComparable> findRelativePeers(long securityId, UsSecurityMaster security, int limit) {
+        return findRelativePeers(securityId, security, limit, null, null);
+    }
+
+    public List<UsRelativePeerComparable> findRelativePeers(
+            long securityId,
+            UsSecurityMaster security,
+            int limit,
+            Double minFcfMarginOverride,
+            Double minRoicOverride
+    ) {
         if (security == null) {
             return List.of();
         }
         String companyType = security.companyType();
         boolean qualityFilter = "compounder".equals(companyType) || "hypergrowth_saas".equals(companyType);
-        double minFcfMargin = qualityFilter ? 0.03 : -1.0;
-        double minRoic     = qualityFilter ? 0.05 : -1.0;
+        double minFcfMargin = minFcfMarginOverride == null ? (qualityFilter ? 0.03 : -1.0) : minFcfMarginOverride;
+        double minRoic = minRoicOverride == null ? (qualityFilter ? 0.05 : -1.0) : minRoicOverride;
         return securityMasterRepository.findRelativePeers(
                 securityId,
                 security.sector(),

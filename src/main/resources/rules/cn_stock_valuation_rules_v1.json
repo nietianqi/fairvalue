@@ -1,0 +1,482 @@
+{
+  "name": "cn_stock_valuation_engine",
+  "version": "1.0.0",
+  "purpose": "对中国股票进行科学、严谨、可解释、可复核的合理股价估值",
+  "market_scope": [
+    "CN_A_SHARE",
+    "HK_STOCK",
+    "US_LISTED_CHINESE_ADR"
+  ],
+  "activation_rules": {
+    "always_activate_for": [
+      "这只股票贵不贵",
+      "目标价是多少",
+      "合理估值是多少",
+      "帮我做DCF",
+      "PE估值",
+      "EV/EBITDA怎么看",
+      "现在值得买吗",
+      "内在价值计算",
+      "上涨空间多少",
+      "股票代码+估值关键词"
+    ]
+  },
+  "core_principles": [
+    "必须先判断公司类型，再匹配估值模型",
+    "必须至少使用3种估值方法交叉验证",
+    "不能只用静态PE下结论",
+    "周期股必须采用中周期利润估值",
+    "亏损公司不能硬套PE，应优先PS、EV/Sales、SOTP或阶段性DCF",
+    "必须重视扣非净利润、现金流质量、商誉、减值、应收账款、存货、股权摊薄、可转债、定增和再融资压力",
+    "必须加入政策、流动性、治理、国企/民企、市场风格修正",
+    "必须区分基本面合理价与短期市场交易价/情绪价",
+    "必须给出悲观、中性、乐观三种情景"
+  ],
+  "valuation_master_formula": {
+    "formula": "FV = SUM(method_value_i * method_weight_i) * china_adjustment_factor",
+    "china_adjustment_factor": "policy_factor * liquidity_factor * governance_factor * structure_factor * style_factor"
+  },
+  "company_type_framework": [
+    {
+      "type": "mature_stable",
+      "primary_models": [
+        "PE",
+        "DCF"
+      ],
+      "secondary_models": [
+        "EV_EBITDA",
+        "DDM"
+      ]
+    },
+    {
+      "type": "high_growth",
+      "primary_models": [
+        "PEG",
+        "DCF"
+      ],
+      "secondary_models": [
+        "PE",
+        "PS",
+        "EV_Sales"
+      ]
+    },
+    {
+      "type": "strong_cyclical",
+      "primary_models": [
+        "MID_CYCLE_PE",
+        "MID_CYCLE_EV_EBITDA"
+      ],
+      "secondary_models": [
+        "NAV",
+        "DCF"
+      ]
+    },
+    {
+      "type": "turnaround",
+      "primary_models": [
+        "SOTP",
+        "NORMALIZED_PE"
+      ],
+      "secondary_models": [
+        "PB",
+        "DCF"
+      ]
+    },
+    {
+      "type": "asset_revaluation",
+      "primary_models": [
+        "NAV",
+        "PB"
+      ],
+      "secondary_models": [
+        "SOTP"
+      ]
+    },
+    {
+      "type": "high_dividend_defensive",
+      "primary_models": [
+        "DDM",
+        "DCF"
+      ],
+      "secondary_models": [
+        "EV_EBITDA",
+        "PB"
+      ]
+    },
+    {
+      "type": "loss_making_expansion",
+      "primary_models": [
+        "PS",
+        "EV_Sales",
+        "EV_ARR"
+      ],
+      "secondary_models": [
+        "SOTP",
+        "STAGE_DCF",
+        "rNPV"
+      ]
+    },
+    {
+      "type": "theme_driven",
+      "primary_models": [
+        "PE",
+        "PS"
+      ],
+      "secondary_models": [
+        "DCF"
+      ],
+      "warning": "误差大，只能给区间参考"
+    }
+  ],
+  "data_requirements": {
+    "required": [
+      "ticker",
+      "company_name",
+      "listing_market",
+      "currency",
+      "current_price",
+      "market_cap",
+      "total_shares",
+      "diluted_shares",
+      "ttm_revenue",
+      "ttm_net_profit",
+      "ttm_ex_non_recurring_net_profit",
+      "next_year_consensus_eps",
+      "next_year_consensus_revenue",
+      "next_year_consensus_net_profit",
+      "cash_and_cash_equivalents",
+      "interest_bearing_debt",
+      "book_value_equity",
+      "roe",
+      "roic",
+      "gross_margin",
+      "net_margin",
+      "operating_cash_flow",
+      "free_cash_flow",
+      "asset_liability_ratio"
+    ],
+    "recommended": [
+      "latest_ebitda",
+      "two_year_forward_eps",
+      "goodwill",
+      "minority_interest",
+      "accounts_receivable",
+      "inventory",
+      "dividend_per_share",
+      "dividend_yield",
+      "convertible_bonds",
+      "share_based_payment",
+      "planned_refinancing",
+      "equity_pledge_ratio",
+      "audit_firm_change",
+      "related_party_transactions",
+      "vie_structure_info",
+      "ah_premium_info"
+    ]
+  },
+  "financial_normalization_rules": {
+    "core_profit": "core_net_profit = ex_non_recurring_net_profit + adjusted_share_based_payment - one_off_subsidy",
+    "adjusted_net_debt": "interest_bearing_debt - cash - liquid_financial_assets + lease_liabilities - restricted_cash + hidden_debt_like_instruments",
+    "goodwill_rule": "goodwill/equity > 30% => high risk",
+    "vIE_adjustment": {
+      "stable": "0.10-0.15",
+      "review_period": "0.20-0.30",
+      "high_uncertainty": "0.30-0.50"
+    },
+    "ah_rule": "A/H双上市公司必须监控AH溢价率"
+  },
+  "red_flag_rules": {
+    "high_risk_signals": [
+      "净利润高但经营现金流持续为负",
+      "应收账款增速长期显著高于营收增速",
+      "存货增速长期显著高于营收增速",
+      "多次变更审计师",
+      "高比例股权质押",
+      "关联交易占比高",
+      "频繁再融资",
+      "商誉/净资产过高",
+      "实控人异常事件"
+    ]
+  },
+  "industry_router": [
+    {
+      "industry": "bank",
+      "primary_models": [
+        "PB_ROE_KE",
+        "DDM"
+      ],
+      "secondary_models": [
+        "P_PPOP"
+      ]
+    },
+    {
+      "industry": "broker",
+      "primary_models": [
+        "PB",
+        "ROE_KE"
+      ],
+      "secondary_models": [
+        "PE"
+      ]
+    },
+    {
+      "industry": "insurance",
+      "primary_models": [
+        "EMBEDDED_VALUE",
+        "PB"
+      ],
+      "secondary_models": [
+        "NBV_MULTIPLE"
+      ]
+    },
+    {
+      "industry": "consumer",
+      "primary_models": [
+        "PE",
+        "DCF"
+      ],
+      "secondary_models": [
+        "PEG",
+        "EV_EBITDA"
+      ]
+    },
+    {
+      "industry": "pharma_innovative_profitable",
+      "primary_models": [
+        "PE_CORE",
+        "rNPV"
+      ],
+      "secondary_models": [
+        "DCF",
+        "PS"
+      ]
+    },
+    {
+      "industry": "biotech_loss_making",
+      "primary_models": [
+        "rNPV",
+        "EV_Sales"
+      ],
+      "secondary_models": [
+        "STAGE_DCF"
+      ]
+    },
+    {
+      "industry": "semiconductor",
+      "primary_models": [
+        "EV_EBITDA",
+        "PE",
+        "PEG"
+      ],
+      "secondary_models": [
+        "DCF"
+      ]
+    },
+    {
+      "industry": "ai_software_saas",
+      "primary_models": [
+        "PS",
+        "EV_Sales",
+        "EV_ARR"
+      ],
+      "secondary_models": [
+        "DCF",
+        "PEG"
+      ]
+    },
+    {
+      "industry": "cyclical_resources",
+      "primary_models": [
+        "MID_CYCLE_PROFIT",
+        "MID_CYCLE_EV_EBITDA"
+      ],
+      "secondary_models": [
+        "NAV",
+        "DCF"
+      ]
+    },
+    {
+      "industry": "telecom_utility_high_dividend",
+      "primary_models": [
+        "DDM",
+        "DCF"
+      ],
+      "secondary_models": [
+        "EV_EBITDA"
+      ]
+    },
+    {
+      "industry": "real_estate",
+      "primary_models": [
+        "NAV",
+        "PB"
+      ],
+      "secondary_models": [
+        "PE"
+      ]
+    },
+    {
+      "industry": "holding_group",
+      "primary_models": [
+        "SOTP"
+      ],
+      "secondary_models": [
+        "NAV"
+      ]
+    }
+  ],
+  "model_selection_rules": {
+    "minimum_model_count": 3,
+    "must_include": [
+      "至少一个相对估值模型",
+      "至少一个绝对估值模型或资产估值模型"
+    ],
+    "forbidden_shortcuts": [
+      "不可对所有行业统一套PE",
+      "不可对周期股使用峰值利润",
+      "不可对亏损公司直接用PE得出结论"
+    ]
+  },
+  "weighting_rules": {
+    "examples": [
+      {
+        "case": "成熟消费",
+        "weights": {
+          "PE": 0.35,
+          "DCF": 0.4,
+          "EV_EBITDA": 0.25
+        }
+      },
+      {
+        "case": "半导体",
+        "weights": {
+          "EV_EBITDA": 0.35,
+          "PE": 0.3,
+          "DCF": 0.35
+        }
+      },
+      {
+        "case": "银行",
+        "weights": {
+          "PB_ROE_KE": 0.5,
+          "DDM": 0.3,
+          "P_PPOP": 0.2
+        }
+      },
+      {
+        "case": "创新药",
+        "weights": {
+          "rNPV": 0.6,
+          "PS": 0.2,
+          "DCF": 0.2
+        }
+      },
+      {
+        "case": "集团控股",
+        "weights": {
+          "SOTP": 0.7,
+          "NAV": 0.2,
+          "PE": 0.1
+        }
+      }
+    ]
+  },
+  "wacc_engine": {
+    "formula": "WACC = (E/(E+D))*Ke + (D/(E+D))*Kd*(1-tax_rate)",
+    "ke_formula": "Ke = Rf + relevered_beta * ERP + size_premium + company_specific_risk + vie_premium",
+    "rf_rules": {
+      "CN_A_SHARE": "中国10年期国债收益率",
+      "HK_STOCK": "香港10年期债券收益率或中国国债+100bp",
+      "US_LISTED_CHINESE_ADR": "美元DCF用美国10年期国债；人民币DCF用中国10年期国债"
+    },
+    "erp_reference": {
+      "CN_A_SHARE": "5.5%-7.0%",
+      "HK_STOCK": "6.5%-8.0%",
+      "US_LISTED_CHINESE_ADR": "6.0%-8.0%"
+    }
+  },
+  "china_adjustment_engine": {
+    "policy_factor": {
+      "supportive": "1.00-1.10",
+      "neutral": "0.95-1.00",
+      "strong_regulation": "0.60-0.90"
+    },
+    "liquidity_factor": {
+      "large_liquid_a_share": "0.98-1.02",
+      "small_cap_a_share": "0.85-0.95",
+      "hk_discount_vs_a_share": "0.85-0.95",
+      "illiquid_microcap": "0.70-0.90"
+    },
+    "governance_factor": {
+      "clean": "0.98-1.03",
+      "some_red_flags": "0.85-0.97",
+      "major_red_flags": "0.60-0.85"
+    },
+    "structure_factor": {
+      "normal": "1.00",
+      "vIE_discount": "0.70-0.95",
+      "holding_company_discount": "0.70-0.90",
+      "dilution_pressure": "0.85-0.98"
+    },
+    "style_factor": {
+      "favorable": "1.00-1.08",
+      "neutral": "0.97-1.03",
+      "unfavorable": "0.90-0.98"
+    }
+  },
+  "scenario_engine": {
+    "required_scenarios": [
+      "bear",
+      "base",
+      "bull"
+    ],
+    "default_probability_weights": {
+      "bear": 0.25,
+      "base": 0.55,
+      "bull": 0.2
+    }
+  },
+  "sensitivity_and_reverse_dcf": {
+    "must_output": [
+      "PE_sensitivity_matrix",
+      "DCF_sensitivity_matrix_if_dcf_used",
+      "reverse_dcf_diagnosis_if_dcf_used"
+    ]
+  },
+  "valuation_confidence_scoring": {
+    "scale": "0-100",
+    "components": {
+      "data_quality": 25,
+      "financial_quality": 20,
+      "business_visibility": 20,
+      "model_fit": 15,
+      "policy_and_governance_stability": 10,
+      "forecast_certainty": 10
+    }
+  },
+  "price_system": {
+    "fundamental_fair_value": "中性情景下的多模型加权公允价值",
+    "margin_of_safety_price": {
+      "high_quality_blue_chip": "15%-20%",
+      "general_growth": "20%-30%",
+      "cyclical_or_small_cap_or_high_risk": "30%-40%+"
+    },
+    "sentiment_upper_band_price": "基于乐观情景和风格溢价得到的情绪偏离上沿价"
+  },
+  "output_schema": {
+    "required_sections": [
+      "company_and_industry_positioning",
+      "latest_key_data",
+      "financial_quality_assessment",
+      "valuation_method_1",
+      "valuation_method_2",
+      "valuation_method_3",
+      "integrated_valuation_conclusion",
+      "three_layer_price_system",
+      "current_price_positioning",
+      "catalysts_and_risks",
+      "suitable_investor_type",
+      "final_conclusion_and_confidence_score"
+    ]
+  }
+}

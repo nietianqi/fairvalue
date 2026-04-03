@@ -78,7 +78,7 @@
       "company_type": "compounder",
       "sector_template": "us_tech_compounder",
       "industry_keywords": ["technology", "software", "internet", "computer", "consumer electronics", "semiconductor"],
-      "revenue_growth_min": 0.08,
+      "revenue_growth_min": 0.05,
       "fcf_margin_min": 0.15,
       "roe_min": 0.12
     },
@@ -88,7 +88,8 @@
       "company_type": "income_defensive",
       "sector_template": "us_general_quality",
       "dividend_yield_min": 0.025,
-      "revenue_growth_max": 0.08
+      "revenue_growth_max": 0.08,
+      "keywords_exclude": ["technology", "semiconductor"]
     },
     {
       "id": "cyclical",

@@ -30,6 +30,7 @@ public class UsConfiguredValuationModelsService {
     private static final int RELATIVE_PEER_LIMIT = 8;
     private static final int RELATIVE_PEER_MIN_REQUIRED = 3;
     private final UsSecurityMasterService usSecurityMasterService;
+    private final UsPeerUniverseRulesService usPeerUniverseRulesService;
     private final UsValuationConfigService usValuationConfigService;
     private final FinancialStandardizedRepository financialStandardizedRepository;
     private final FinancialDerivedMetricsRepository financialDerivedMetricsRepository;
@@ -44,6 +45,7 @@ public class UsConfiguredValuationModelsService {
 
     public UsConfiguredValuationModelsService(
             UsSecurityMasterService usSecurityMasterService,
+            UsPeerUniverseRulesService usPeerUniverseRulesService,
             UsValuationConfigService usValuationConfigService,
             FinancialStandardizedRepository financialStandardizedRepository,
             FinancialDerivedMetricsRepository financialDerivedMetricsRepository,
@@ -57,6 +59,7 @@ public class UsConfiguredValuationModelsService {
             ObjectMapper objectMapper
     ) {
         this.usSecurityMasterService = usSecurityMasterService;
+        this.usPeerUniverseRulesService = usPeerUniverseRulesService;
         this.usValuationConfigService = usValuationConfigService;
         this.financialStandardizedRepository = financialStandardizedRepository;
         this.financialDerivedMetricsRepository = financialDerivedMetricsRepository;
@@ -136,6 +139,23 @@ public class UsConfiguredValuationModelsService {
                 latestAudit,
                 dailyHistory,
                 marketSnapshots
+        );
+    }
+
+    public RelativePeerSelectionView selectRelativePeersReadOnly(UsValuationModelContext context, int limit) {
+        RelativePeerSelection selection = selectRelativePeers(context, limit);
+        List<UsRelativePeerComparable> peers = selection.peers();
+        return new RelativePeerSelectionView(
+                peers,
+                selection.candidateCount(),
+                peerSelectionBasis(context, peers),
+                peerSelectionBreakdown(context, peers),
+                selection.filterSummary(),
+                selection.ruleVersion(),
+                selection.filterMetrics(),
+                selection.selectionMode(),
+                peers.isEmpty() ? "template_only" : "peer_set_plus_template",
+                peers.isEmpty() ? "template_only" : RELATIVE_PEER_SOURCE
         );
     }
 
@@ -399,10 +419,10 @@ public class UsConfiguredValuationModelsService {
     ) {
         StockSnapshot snapshot = context.snapshot();
         StockFundamentals fundamentals = snapshot.fundamentals();
-        RelativePeerSelection peerSelection = selectRelativePeers(context, RELATIVE_PEER_LIMIT);
+        RelativePeerSelectionView peerSelection = selectRelativePeersReadOnly(context, RELATIVE_PEER_LIMIT);
         List<UsRelativePeerComparable> peers = peerSelection.peers();
-        String peerSelectionBasis = peerSelectionBasis(context, peers);
-        Map<String, Long> peerSelectionBreakdown = peerSelectionBreakdown(context, peers);
+        String peerSelectionBasis = peerSelection.selectionBasis();
+        Map<String, Long> peerSelectionBreakdown = peerSelection.selectionBreakdown();
         List<String> peerTickers = peers.stream()
                 .map(UsRelativePeerComparable::ticker)
                 .toList();
@@ -471,11 +491,11 @@ public class UsConfiguredValuationModelsService {
         assumptions.put("peer_set_tickers", peerTickers);
         assumptions.put("peer_selection_basis", peerSelectionBasis);
         assumptions.put("peer_selection_breakdown", peerSelectionBreakdown);
-        assumptions.put("peer_set_source", peers.isEmpty() ? "template_only" : RELATIVE_PEER_SOURCE);
-        assumptions.put("relative_source_mode", peers.isEmpty() ? "template_only" : "peer_set_plus_template");
-        assumptions.put("peer_selection_rule_version", "v2_strict");
+        assumptions.put("peer_set_source", peerSelection.peerSetSource());
+        assumptions.put("relative_source_mode", peerSelection.sourceMode());
+        assumptions.put("peer_selection_rule_version", peerSelection.ruleVersion());
         assumptions.put("peer_filter_summary", peerSelection.filterSummary());
-        assumptions.put("peer_filter_metrics", List.of("market_cap", "revenue_growth", "fcf_margin", "roic", "usable_multiple"));
+        assumptions.put("peer_filter_metrics", peerSelection.filterMetrics());
         assumptions.put("parameter_sources", parameterSources(context,
                 Map.entry("target_ev_ebitda", "relative.target_ev_ebitda"),
                 Map.entry("target_pe", "relative.target_pe")
@@ -898,19 +918,22 @@ public class UsConfiguredValuationModelsService {
 
     private RelativePeerSelection selectRelativePeers(UsValuationModelContext context, int limit) {
         if (context.securityId() <= 0 || context.security() == null) {
-            return new RelativePeerSelection(List.of(), 0, "no_security_context");
+            return new RelativePeerSelection(List.of(), 0, "no_security_context", null, List.of(), "template_only");
         }
-        int candidateLimit = Math.max(limit * 3, 24);
+        UsPeerUniverseRuleProfile rule = peerRule(context);
+        int candidateLimit = Math.max(limit * rule.candidateLimitMultiplier(), 24);
         List<UsRelativePeerComparable> candidates = usSecurityMasterService.findRelativePeers(
                 context.securityId(),
                 context.security(),
-                candidateLimit
+                candidateLimit,
+                rule.fetchMinFcfMargin(),
+                rule.fetchMinRoic()
         );
         if (candidates.isEmpty()) {
-            return new RelativePeerSelection(List.of(), 0, "no_candidates");
+            return new RelativePeerSelection(List.of(), 0, "no_candidates", rule.ruleVersion(), rule.filterMetrics(), "template_only");
         }
 
-        for (String basis : List.of("industry", "sector_template", "company_type", "sector")) {
+        for (String basis : rule.basisOrder()) {
             List<UsRelativePeerComparable> basisPeers = candidates.stream()
                     .filter(peer -> basis.equals(peerMatchBasis(context.security(), peer)))
                     .toList();
@@ -918,16 +941,19 @@ public class UsConfiguredValuationModelsService {
                 continue;
             }
             List<UsRelativePeerComparable> filtered = applyStrictPeerFilters(context, basisPeers, limit);
-            if (filtered.size() >= RELATIVE_PEER_MIN_REQUIRED) {
+            if (filtered.size() >= rule.minPeersRequired()) {
                 return new RelativePeerSelection(
                         filtered,
                         candidates.size(),
-                        "basis=" + basis + ", selected=" + filtered.size() + ", mode=strict"
+                        "basis=" + basis + ", selected=" + filtered.size() + ", mode=strict, rule=" + rule.ruleId(),
+                        rule.ruleVersion(),
+                        rule.filterMetrics(),
+                        "strict_peer_set"
                 );
             }
         }
 
-        for (String basis : List.of("industry", "sector_template", "company_type", "sector")) {
+        for (String basis : rule.basisOrder()) {
             List<UsRelativePeerComparable> basisPeers = candidates.stream()
                     .filter(peer -> basis.equals(peerMatchBasis(context.security(), peer)))
                     .toList();
@@ -937,13 +963,16 @@ public class UsConfiguredValuationModelsService {
                     return new RelativePeerSelection(
                             filtered,
                             candidates.size(),
-                            "basis=" + basis + ", selected=" + filtered.size() + ", mode=relaxed"
+                            "basis=" + basis + ", selected=" + filtered.size() + ", mode=relaxed, rule=" + rule.ruleId(),
+                            rule.ruleVersion(),
+                            rule.filterMetrics(),
+                            "relaxed_peer_set"
                     );
                 }
             }
         }
 
-        return new RelativePeerSelection(List.of(), candidates.size(), "no_clean_peer_set");
+        return new RelativePeerSelection(List.of(), candidates.size(), "no_clean_peer_set", rule.ruleVersion(), rule.filterMetrics(), "template_only");
     }
 
     private Map<String, Long> peerSelectionBreakdown(UsValuationModelContext context, List<UsRelativePeerComparable> peers) {
@@ -974,6 +1003,10 @@ public class UsConfiguredValuationModelsService {
         return "other";
     }
 
+    private UsPeerUniverseRuleProfile peerRule(UsValuationModelContext context) {
+        return usPeerUniverseRulesService.resolve(context.security());
+    }
+
     private boolean sameValue(String left, String right) {
         return left != null && right != null && left.equalsIgnoreCase(right);
     }
@@ -983,13 +1016,16 @@ public class UsConfiguredValuationModelsService {
             List<UsRelativePeerComparable> peers,
             int limit
     ) {
+        UsPeerUniverseRuleProfile rule = peerRule(context);
         return peers.stream()
                 .filter(peer -> hasUsableMultiple(peer))
-                .filter(peer -> withinMarketCapBand(context, peer, 0.25, 4.0))
-                .filter(peer -> withinRevenueGrowthBand(context, peer, 0.18))
-                .filter(peer -> withinFcfMarginBand(context, peer, 0.18))
-                .filter(peer -> withinRoicBand(context, peer, 0.30))
-                .sorted(Comparator.comparingDouble(peer -> peerDistance(context, peer)))
+                .filter(peer -> withinMarketCapBand(context, peer, rule.strictMarketCapMinRatio(), rule.strictMarketCapMaxRatio()))
+                .filter(peer -> withinRevenueGrowthBand(context, peer, rule.strictRevenueGrowthTolerance(), rule.filterMetrics()))
+                .filter(peer -> withinFcfMarginBand(context, peer, rule.strictFcfMarginTolerance(), rule.filterMetrics()))
+                .filter(peer -> withinRoicBand(context, peer, rule.strictRoicTolerance(), rule.filterMetrics()))
+                .filter(peer -> withinPeBand(context, peer, rule.strictPeTolerance(), rule.filterMetrics()))
+                .filter(peer -> withinPbBand(context, peer, rule.strictPbTolerance(), rule.filterMetrics()))
+                .sorted(Comparator.comparingDouble(peer -> peerDistance(context, peer, rule.filterMetrics())))
                 .limit(limit)
                 .toList();
     }
@@ -999,10 +1035,16 @@ public class UsConfiguredValuationModelsService {
             List<UsRelativePeerComparable> peers,
             int limit
     ) {
+        UsPeerUniverseRuleProfile rule = peerRule(context);
         return peers.stream()
                 .filter(peer -> hasUsableMultiple(peer))
-                .filter(peer -> withinMarketCapBand(context, peer, 0.15, 6.0))
-                .sorted(Comparator.comparingDouble(peer -> peerDistance(context, peer)))
+                .filter(peer -> withinMarketCapBand(context, peer, rule.relaxedMarketCapMinRatio(), rule.relaxedMarketCapMaxRatio()))
+                .filter(peer -> withinRevenueGrowthBand(context, peer, rule.relaxedRevenueGrowthTolerance(), rule.filterMetrics()))
+                .filter(peer -> withinFcfMarginBand(context, peer, rule.relaxedFcfMarginTolerance(), rule.filterMetrics()))
+                .filter(peer -> withinRoicBand(context, peer, rule.relaxedRoicTolerance(), rule.filterMetrics()))
+                .filter(peer -> withinPeBand(context, peer, rule.relaxedPeTolerance(), rule.filterMetrics()))
+                .filter(peer -> withinPbBand(context, peer, rule.relaxedPbTolerance(), rule.filterMetrics()))
+                .sorted(Comparator.comparingDouble(peer -> peerDistance(context, peer, rule.filterMetrics())))
                 .limit(limit)
                 .toList();
     }
@@ -1023,7 +1065,10 @@ public class UsConfiguredValuationModelsService {
         return ratio >= minRatio && ratio <= maxRatio;
     }
 
-    private boolean withinFcfMarginBand(UsValuationModelContext context, UsRelativePeerComparable peer, double tolerance) {
+    private boolean withinFcfMarginBand(UsValuationModelContext context, UsRelativePeerComparable peer, Double tolerance, List<String> metrics) {
+        if (!metrics.contains("fcf_margin") || tolerance == null) {
+            return true;
+        }
         Double targetFcfMargin = targetFcfMargin(context);
         double peerFcfMargin = decimalValue(peer.fcfMargin());
         if (targetFcfMargin == null || peerFcfMargin <= 0.0) {
@@ -1032,7 +1077,10 @@ public class UsConfiguredValuationModelsService {
         return Math.abs(peerFcfMargin - targetFcfMargin) <= tolerance;
     }
 
-    private boolean withinRoicBand(UsValuationModelContext context, UsRelativePeerComparable peer, double tolerance) {
+    private boolean withinRoicBand(UsValuationModelContext context, UsRelativePeerComparable peer, Double tolerance, List<String> metrics) {
+        if (!metrics.contains("roic") || tolerance == null) {
+            return true;
+        }
         Double targetRoic = targetRoic(context);
         double peerRoic = decimalValue(peer.roic());
         if (targetRoic == null || peerRoic <= 0.0) {
@@ -1041,7 +1089,10 @@ public class UsConfiguredValuationModelsService {
         return Math.abs(peerRoic - targetRoic) <= tolerance;
     }
 
-    private boolean withinRevenueGrowthBand(UsValuationModelContext context, UsRelativePeerComparable peer, double tolerance) {
+    private boolean withinRevenueGrowthBand(UsValuationModelContext context, UsRelativePeerComparable peer, Double tolerance, List<String> metrics) {
+        if (!metrics.contains("revenue_growth") || tolerance == null) {
+            return true;
+        }
         Double targetRevenueGrowth = targetRevenueGrowth(context);
         if (targetRevenueGrowth == null || peer.revenueGrowthProxy() == null) {
             return true;
@@ -1050,24 +1101,54 @@ public class UsConfiguredValuationModelsService {
         return Math.abs(peerRevenueGrowth - targetRevenueGrowth) <= tolerance;
     }
 
-    private double peerDistance(UsValuationModelContext context, UsRelativePeerComparable peer) {
+    private boolean withinPeBand(UsValuationModelContext context, UsRelativePeerComparable peer, Double tolerance, List<String> metrics) {
+        if (!metrics.contains("pe") || tolerance == null) {
+            return true;
+        }
+        Double targetPe = targetPe(context);
+        if (targetPe == null || peer.peTtm() == null || peer.peTtm().doubleValue() <= 0.0) {
+            return true;
+        }
+        return Math.abs(peer.peTtm().doubleValue() - targetPe) <= tolerance;
+    }
+
+    private boolean withinPbBand(UsValuationModelContext context, UsRelativePeerComparable peer, Double tolerance, List<String> metrics) {
+        if (!metrics.contains("pb") || tolerance == null) {
+            return true;
+        }
+        Double targetPb = targetPb(context);
+        if (targetPb == null || peer.pb() == null || peer.pb().doubleValue() <= 0.0) {
+            return true;
+        }
+        return Math.abs(peer.pb().doubleValue() - targetPb) <= tolerance;
+    }
+
+    private double peerDistance(UsValuationModelContext context, UsRelativePeerComparable peer, List<String> metrics) {
         double distance = 0.0;
         double targetMarketCap = decimalValue(latestMarketCap(context));
         double peerMarketCap = decimalValue(peer.marketCap());
-        if (targetMarketCap > 0.0 && peerMarketCap > 0.0) {
+        if (metrics.contains("market_cap") && targetMarketCap > 0.0 && peerMarketCap > 0.0) {
             distance += Math.abs(Math.log(peerMarketCap / targetMarketCap));
         }
         Double targetRevenueGrowth = targetRevenueGrowth(context);
-        if (targetRevenueGrowth != null && peer.revenueGrowthProxy() != null) {
+        if (metrics.contains("revenue_growth") && targetRevenueGrowth != null && peer.revenueGrowthProxy() != null) {
             distance += Math.abs(decimalValue(peer.revenueGrowthProxy()) - targetRevenueGrowth);
         }
         Double targetFcfMargin = targetFcfMargin(context);
-        if (targetFcfMargin != null && positive(peer.fcfMargin())) {
+        if (metrics.contains("fcf_margin") && targetFcfMargin != null && positive(peer.fcfMargin())) {
             distance += Math.abs(decimalValue(peer.fcfMargin()) - targetFcfMargin);
         }
         Double targetRoic = targetRoic(context);
-        if (targetRoic != null && positive(peer.roic())) {
+        if (metrics.contains("roic") && targetRoic != null && positive(peer.roic())) {
             distance += Math.abs(decimalValue(peer.roic()) - targetRoic);
+        }
+        Double targetPe = targetPe(context);
+        if (metrics.contains("pe") && targetPe != null && positive(peer.peTtm())) {
+            distance += Math.abs(decimalValue(peer.peTtm()) - targetPe) / Math.max(targetPe, 1.0);
+        }
+        Double targetPb = targetPb(context);
+        if (metrics.contains("pb") && targetPb != null && positive(peer.pb())) {
+            distance += Math.abs(decimalValue(peer.pb()) - targetPb) / Math.max(targetPb, 0.5);
         }
         return distance;
     }
@@ -1102,6 +1183,16 @@ public class UsConfiguredValuationModelsService {
             return decimalValue(context.latestDerived().roic());
         }
         return null;
+    }
+
+    private Double targetPe(UsValuationModelContext context) {
+        double pe = context.snapshot().fundamentals().pe();
+        return pe > 0.0 ? pe : null;
+    }
+
+    private Double targetPb(UsValuationModelContext context) {
+        double pb = context.snapshot().fundamentals().pb();
+        return pb > 0.0 ? pb : null;
     }
 
     private Double structuredRevenueGrowth(UsValuationModelContext context) {
@@ -1141,7 +1232,24 @@ public class UsConfiguredValuationModelsService {
     private record RelativePeerSelection(
             List<UsRelativePeerComparable> peers,
             int candidateCount,
-            String filterSummary
+            String filterSummary,
+            String ruleVersion,
+            List<String> filterMetrics,
+            String selectionMode
+    ) {
+    }
+
+    public record RelativePeerSelectionView(
+            List<UsRelativePeerComparable> peers,
+            int candidateCount,
+            String selectionBasis,
+            Map<String, Long> selectionBreakdown,
+            String filterSummary,
+            String ruleVersion,
+            List<String> filterMetrics,
+            String selectionMode,
+            String sourceMode,
+            String peerSetSource
     ) {
     }
 

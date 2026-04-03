@@ -10,9 +10,11 @@ import org.springframework.util.StringUtils;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -56,9 +58,18 @@ public class EmbeddedPostgresEnvironmentPostProcessor implements EnvironmentPost
             try {
                 int requestedPort = environment.getProperty("app.postgres.embedded.port", Integer.class, 5432);
                 String requestedDatabase = environment.getProperty("app.postgres.embedded.database", "fairvalue");
+                int startupWaitSeconds = environment.getProperty("app.postgres.embedded.startup-wait-seconds", Integer.class, 30);
                 validateDatabaseName(requestedDatabase);
 
-                EmbeddedPostgres.Builder builder = EmbeddedPostgres.builder();
+                if (requestedPort > 0 && tryReuseExistingPostgres(requestedPort, requestedDatabase)) {
+                    actualPort = requestedPort;
+                    databaseName = requestedDatabase;
+                    System.out.println("[embedded-postgres] reusing existing postgres on port " + actualPort + ", database=" + requestedDatabase);
+                    return;
+                }
+
+                EmbeddedPostgres.Builder builder = EmbeddedPostgres.builder()
+                        .setPGStartupWait(Duration.ofSeconds(Math.max(10, startupWaitSeconds)));
                 if (requestedPort > 0) {
                     builder.setPort(requestedPort);
                 }
@@ -79,8 +90,23 @@ public class EmbeddedPostgresEnvironmentPostProcessor implements EnvironmentPost
 
     private void ensureDatabaseExists(String requestedDatabase) throws Exception {
         DataSource postgresDatabase = embeddedPostgres.getPostgresDatabase();
-        try (Connection connection = postgresDatabase.getConnection();
-             PreparedStatement check = connection.prepareStatement("select 1 from pg_database where datname = ?")) {
+        try (Connection connection = postgresDatabase.getConnection()) {
+            ensureDatabaseExists(connection, requestedDatabase);
+        }
+    }
+
+    private boolean tryReuseExistingPostgres(int requestedPort, String requestedDatabase) {
+        String url = "jdbc:postgresql://localhost:" + requestedPort + "/postgres";
+        try (Connection connection = DriverManager.getConnection(url, "postgres", "postgres")) {
+            ensureDatabaseExists(connection, requestedDatabase);
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private void ensureDatabaseExists(Connection connection, String requestedDatabase) throws Exception {
+        try (PreparedStatement check = connection.prepareStatement("select 1 from pg_database where datname = ?")) {
             check.setString(1, requestedDatabase);
             try (ResultSet resultSet = check.executeQuery()) {
                 if (resultSet.next()) {
@@ -89,8 +115,7 @@ public class EmbeddedPostgresEnvironmentPostProcessor implements EnvironmentPost
             }
         }
 
-        try (Connection connection = postgresDatabase.getConnection();
-             Statement statement = connection.createStatement()) {
+        try (Statement statement = connection.createStatement()) {
             statement.execute("create database \"" + requestedDatabase + "\"");
         }
     }

@@ -1,10 +1,13 @@
 package com.fairvalue.engine.repository;
 
+import com.fairvalue.engine.us.UsLatestRelativeValuationRecord;
 import com.fairvalue.engine.us.UsValuationMethodResultRecord;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public class ValuationMethodResultsRepository {
@@ -70,6 +73,28 @@ public class ValuationMethodResultsRepository {
                     .param("notes", record.notes())
                     .update();
         }
+    }
+
+    public Optional<UsLatestRelativeValuationRecord> findLatestRelativeBySecurityId(long securityId) {
+        return jdbcClient.sql("""
+                        SELECT vmr.valuation_run_id,
+                               vr.valuation_date,
+                               vmr.assumptions_json::text AS assumptions_json
+                        FROM fairvalue.valuation_method_results vmr
+                        JOIN fairvalue.valuation_runs vr
+                          ON vr.id = vmr.valuation_run_id
+                        WHERE vmr.security_id = :securityId
+                          AND vmr.method_name = 'relative_valuation'
+                        ORDER BY vr.valuation_date DESC
+                        LIMIT 1
+                        """)
+                .param("securityId", securityId)
+                .query((rs, rowNum) -> new UsLatestRelativeValuationRecord(
+                        rs.getLong("valuation_run_id"),
+                        rs.getTimestamp("valuation_date").toInstant(),
+                        rs.getString("assumptions_json")
+                ))
+                .optional();
     }
 
     private String emptyJson(String value) {

@@ -6,6 +6,9 @@ public record HistoryPoint(
         LocalDate date,
         double closePrice,
         double tradableFairValue,
-        double deviation
+        double deviation,
+        LocalDate valuationRunDate,
+        String runId,
+        boolean simulated
 ) {
 }

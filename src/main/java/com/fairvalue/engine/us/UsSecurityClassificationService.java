@@ -61,7 +61,7 @@ public class UsSecurityClassificationService {
                 .filter(rule -> matches(rule, context))
                 .findFirst()
                 .orElse(new ClassificationRule("default", 0, rules.defaultCompanyType(), rules.defaultSectorTemplate(),
-                        List.of(), List.of(), null, null, null, null, null, null, null, null));
+                        List.of(), List.of(), List.of(), null, null, null, null, null, null, null, null));
 
         String exchange = firstNonBlank(profile == null ? null : profile.exchange(), current.exchange(), inferExchange(current.ticker()));
         String companyName = firstNonBlank(profile == null ? null : profile.companyName(), current.companyName(), snapshot == null ? null : snapshot.companyName());
@@ -110,6 +110,12 @@ public class UsSecurityClassificationService {
             return false;
         }
         if (!matchesKeywords(rule.safeIndustryKeywords(), context.industry())) {
+            return false;
+        }
+        List<String> excludeKeywords = rule.safeKeywordsExclude();
+        if (!excludeKeywords.isEmpty()
+                && (matchesKeywords(excludeKeywords, context.sector())
+                    || matchesKeywords(excludeKeywords, context.industry()))) {
             return false;
         }
         if (!greaterOrEqual(context.revenueGrowth(), rule.revenueGrowthMin())) {
@@ -278,6 +284,7 @@ public class UsSecurityClassificationService {
             String sectorTemplate,
             List<String> sectorKeywords,
             List<String> industryKeywords,
+            List<String> keywordsExclude,
             Double revenueGrowthMin,
             Double revenueGrowthMax,
             Double fcfMarginMin,
@@ -297,6 +304,11 @@ public class UsSecurityClassificationService {
 
         public List<String> safeIndustryKeywords() {
             return industryKeywords == null ? List.of() : industryKeywords;
+        }
+
+        /** Keywords matched against both sector AND industry — if any match, the rule is excluded. */
+        public List<String> safeKeywordsExclude() {
+            return keywordsExclude == null ? List.of() : keywordsExclude;
         }
     }
 }

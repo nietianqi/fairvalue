@@ -3,10 +3,14 @@ package com.fairvalue.engine.api;
 import com.fairvalue.engine.api.dto.BatchValuationRequest;
 import com.fairvalue.engine.api.dto.BatchValuationResponse;
 import com.fairvalue.engine.api.dto.HistoryResponse;
+import com.fairvalue.engine.api.dto.MarketPeersResponse;
+import com.fairvalue.engine.api.dto.MarketRankingResponse;
 import com.fairvalue.engine.api.dto.ScenarioRequest;
 import com.fairvalue.engine.api.dto.ScreenerRequest;
 import com.fairvalue.engine.api.dto.ScreenerResponse;
+import com.fairvalue.engine.api.dto.cn.CnDiscoveryResponse;
 import com.fairvalue.engine.domain.Market;
+import com.fairvalue.engine.service.MarketDiscoveryService;
 import com.fairvalue.engine.service.ValuationService;
 import com.fairvalue.engine.valuation.ExplainResult;
 import com.fairvalue.engine.valuation.ScenarioResult;
@@ -26,14 +30,55 @@ import java.util.List;
 @RequestMapping("/v1")
 public class ValuationController {
     private final ValuationService valuationService;
+    private final MarketDiscoveryService marketDiscoveryService;
 
-    public ValuationController(ValuationService valuationService) {
+    public ValuationController(
+            ValuationService valuationService,
+            MarketDiscoveryService marketDiscoveryService
+    ) {
         this.valuationService = valuationService;
+        this.marketDiscoveryService = marketDiscoveryService;
     }
 
     @GetMapping("/valuation/{market}/{symbol}")
     public ValuationResult getValuation(@PathVariable String market, @PathVariable String symbol) {
         return valuationService.valuate(Market.from(market), symbol);
+    }
+
+    @GetMapping("/discovery/{market}")
+    public CnDiscoveryResponse discovery(
+            @PathVariable String market,
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "30") Integer size
+    ) {
+        return marketDiscoveryService.discovery(Market.from(market), page, size);
+    }
+
+    @GetMapping("/rankings/{market}/undervalued")
+    public MarketRankingResponse undervaluedRankings(
+            @PathVariable String market,
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "30") Integer size
+    ) {
+        return marketDiscoveryService.rankings(Market.from(market), "undervalued", page, size);
+    }
+
+    @GetMapping("/rankings/{market}/overvalued")
+    public MarketRankingResponse overvaluedRankings(
+            @PathVariable String market,
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "30") Integer size
+    ) {
+        return marketDiscoveryService.rankings(Market.from(market), "overvalued", page, size);
+    }
+
+    @GetMapping("/peers/{market}/{symbol}")
+    public MarketPeersResponse peers(
+            @PathVariable String market,
+            @PathVariable String symbol,
+            @RequestParam(defaultValue = "5") Integer limit
+    ) {
+        return marketDiscoveryService.peers(Market.from(market), symbol, limit);
     }
 
     @PostMapping("/valuation/batch")

@@ -87,8 +87,27 @@ public class UsDamodaranClient {
                         "damodaran_histimpl"
                 );
             }
-            return Optional.ofNullable(latest);
+            if (latest != null) {
+                return Optional.of(latest);
+            }
+            if (properties.getFallbackErp() > 0.0) {
+                return Optional.of(new DamodaranErpSnapshot(
+                        LocalDate.now(),
+                        Double.NaN,
+                        properties.getFallbackErp(),
+                        "damodaran_static_fallback"
+                ));
+            }
+            return Optional.empty();
         } catch (Exception ignored) {
+            if (properties.getFallbackErp() > 0.0) {
+                return Optional.of(new DamodaranErpSnapshot(
+                        LocalDate.now(),
+                        Double.NaN,
+                        properties.getFallbackErp(),
+                        "damodaran_static_fallback"
+                ));
+            }
             return Optional.empty();
         }
     }

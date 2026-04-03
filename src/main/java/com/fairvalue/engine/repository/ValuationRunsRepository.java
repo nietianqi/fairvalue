@@ -1,8 +1,12 @@
 package com.fairvalue.engine.repository;
 
+import com.fairvalue.engine.us.UsValuationRunHistoryRecord;
 import com.fairvalue.engine.us.UsValuationRunRecord;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
+
+import java.time.LocalDate;
+import java.util.List;
 
 @Repository
 public class ValuationRunsRepository {
@@ -100,6 +104,31 @@ public class ValuationRunsRepository {
                 .query(Long.class)
                 .single();
         return count == null ? 0L : count;
+    }
+
+    public List<UsValuationRunHistoryRecord> findRecentHistoryBySecurityId(long securityId, int limit) {
+        return jdbcClient.sql("""
+                        SELECT id::text AS run_id,
+                               valuation_date::date AS valuation_date,
+                               valuation_date::date AS valuation_run_date,
+                               fair_value_mid
+                        FROM fairvalue.valuation_runs
+                        WHERE security_id = :securityId
+                        ORDER BY valuation_date DESC
+                        LIMIT :limit
+                        """)
+                .param("securityId", securityId)
+                .param("limit", limit)
+                .query((rs, rowNum) -> new UsValuationRunHistoryRecord(
+                        rs.getObject("valuation_date", LocalDate.class),
+                        rs.getObject("valuation_run_date", LocalDate.class),
+                        rs.getDouble("fair_value_mid"),
+                        rs.getString("run_id")
+                ))
+                .list()
+                .stream()
+                .sorted(java.util.Comparator.comparing(UsValuationRunHistoryRecord::valuationDate))
+                .toList();
     }
 
     private String emptyJson(String value) {

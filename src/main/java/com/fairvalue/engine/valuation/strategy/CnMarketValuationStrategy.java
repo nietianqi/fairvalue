@@ -25,30 +25,36 @@ public class CnMarketValuationStrategy implements MarketValuationStrategy {
         StockFundamentals f = snapshot.fundamentals();
         double price = snapshot.price();
 
-        double peerPe = 18.0 + f.themePremium() * 12.0;
-        double relativeAnchor = MathSupport.clamp(peerPe / Math.max(f.pe(), 5.0), 0.65, 1.45);
+        double relativeAnchor = MathSupport.clamp((18.0 + f.roe() * 35.0) / Math.max(f.pe(), 6.0), 0.65, 1.50);
         double relativeValue = price * relativeAnchor;
 
         double peg = Math.max((f.pe() / Math.max(f.revenueGrowth() * 100.0, 5.0)), 0.30);
-        double pegValue = price * MathSupport.clamp(1.10 / peg, 0.60, 1.35);
+        double pegValue = price * MathSupport.clamp(1.10 / peg, 0.60, 1.40);
 
-        double qualityAnchor = MathSupport.clamp(1.0 + f.roe() * 0.7 - f.policySensitivity() * 0.5 + (f.positiveFreeCashFlow() ? 0.06 : -0.08), 0.60, 1.30);
-        double qualityValue = price * qualityAnchor;
+        double dcfValue = price * MathSupport.clamp(1.0 + f.fcfMargin() * 1.1 + f.revenueGrowth() * 0.7 - f.wacc() + f.terminalGrowth() * 1.8, 0.60, 1.50);
+        double midCycleValue = price * MathSupport.clamp(1.0 + f.roe() * 0.45 - f.earningsVolatility() * 0.35, 0.60, 1.35);
+        double navValue = price * MathSupport.clamp(1.0 + Math.max(f.netCashToMarketCap(), -0.10) * 0.7 + (1.0 / Math.max(f.pb(), 0.9) - 0.8) * 0.30, 0.60, 1.55);
 
         List<ModelValuation> models = List.of(
-                new ModelValuation("relative_multiple", MathSupport.round(relativeValue), 0.45, "Relative PE/PB remains the dominant pricing anchor in A-share rotation cycles."),
-                new ModelValuation("peg", MathSupport.round(pegValue), 0.30, "PEG balances valuation against growth and mitigates one-period earnings noise."),
-                new ModelValuation("quality_anchor", MathSupport.round(qualityValue), 0.25, "Quality anchor discounts policy-sensitive low-quality earnings.")
+                new ModelValuation("relative_pe_pb", MathSupport.round(relativeValue), 0.30, "A-share pricing still relies heavily on relative valuation anchors."),
+                new ModelValuation("peg", MathSupport.round(pegValue), 0.20, "PEG balances growth potential and earnings multiple risk."),
+                new ModelValuation("dcf", MathSupport.round(dcfValue), 0.20, "DCF provides absolute-value anchor under normalized cash-flow assumptions."),
+                new ModelValuation("mid_cycle_profit", MathSupport.round(midCycleValue), 0.15, "Mid-cycle valuation avoids peak-earnings overestimation for cyclical names."),
+                new ModelValuation("nav_asset", MathSupport.round(navValue), 0.15, "NAV/PB anchor reflects asset backing and balance-sheet resilience.")
         );
 
-        double policyDiscount = -MathSupport.clamp(f.policySensitivity() * 0.12, 0.01, 0.06);
-        double sentimentPremium = MathSupport.clamp(f.themePremium() * 0.08, -0.02, 0.05);
-        double liquidityAdjustment = MathSupport.clamp((f.liquidityScore() - 0.5) * 0.06, -0.03, 0.03);
+        double policyFactor = MathSupport.clamp(1.0 - f.policySensitivity() * 0.20 + f.themePremium() * 0.06, 0.60, 1.10);
+        double liquidityFactor = MathSupport.clamp(0.85 + f.liquidityScore() * 0.18, 0.70, 1.02);
+        double governanceFactor = MathSupport.clamp(0.82 + f.governanceScore() * 0.21, 0.60, 1.03);
+        double structureFactor = MathSupport.clamp(1.0 - Math.max(0.0, f.sbcRatio() - 0.02) * 1.5, 0.70, 1.00);
+        double styleFactor = MathSupport.clamp(0.95 + f.themePremium() * 0.12, 0.90, 1.08);
 
         List<MarketAdjustment> adjustments = List.of(
-                new MarketAdjustment("policy_discount", MathSupport.round(policyDiscount), "Policy uncertainty can compress valuation windows quickly."),
-                new MarketAdjustment("theme_sentiment", MathSupport.round(sentimentPremium), "Theme premium captures style rotation and retail sentiment."),
-                new MarketAdjustment("liquidity_adjustment", MathSupport.round(liquidityAdjustment), "Higher turnover supports tradable fair value realization.")
+                new MarketAdjustment("policy_factor", MathSupport.round(policyFactor - 1.0), "Policy environment impacts valuation rerating speed and risk premium."),
+                new MarketAdjustment("liquidity_factor", MathSupport.round(liquidityFactor - 1.0), "Liquidity segmentation causes tradable-value discounts."),
+                new MarketAdjustment("governance_factor", MathSupport.round(governanceFactor - 1.0), "Governance quality directly affects valuation sustainability."),
+                new MarketAdjustment("structure_factor", MathSupport.round(structureFactor - 1.0), "Potential dilution and structure risk pressure fair value."),
+                new MarketAdjustment("style_factor", MathSupport.round(styleFactor - 1.0), "Market style rotation influences short-to-mid term pricing band.")
         );
 
         List<String> riskFlags = new ArrayList<>();
@@ -60,6 +66,10 @@ public class CnMarketValuationStrategy implements MarketValuationStrategy {
         }
         if (!f.positiveFreeCashFlow()) {
             riskFlags.add("negative_free_cash_flow");
+            riskFlags.add("potential_value_trap");
+        }
+        if (f.sbcRatio() > 0.06) {
+            riskFlags.add("dilution_pressure");
         }
 
         Map<String, Double> drivers = new LinkedHashMap<>();
@@ -68,8 +78,9 @@ public class CnMarketValuationStrategy implements MarketValuationStrategy {
         drivers.put("policy_sensitivity", f.policySensitivity());
         drivers.put("theme_premium", f.themePremium());
         drivers.put("liquidity_score", f.liquidityScore());
+        drivers.put("governance_score", f.governanceScore());
 
-        double confidenceBase = MathSupport.clamp(0.58 + f.dataCompleteness() * 0.12 + (f.positiveFreeCashFlow() ? 0.05 : -0.05), 0.35, 0.82);
+        double confidenceBase = MathSupport.clamp(0.56 + f.dataCompleteness() * 0.12 + (f.positiveFreeCashFlow() ? 0.06 : -0.06), 0.35, 0.84);
 
         return new MarketComputation(
                 models,
@@ -77,8 +88,8 @@ public class CnMarketValuationStrategy implements MarketValuationStrategy {
                 riskFlags,
                 drivers,
                 confidenceBase,
-                "CN market emphasizes relative valuation, earnings quality, and policy/sentiment adjustments.",
-                "Selected relative multiple + PEG + quality anchor to reflect fast style rotation and policy-driven repricing."
+                "CN market uses relative + absolute + asset valuation with policy/liquidity/governance/style corrections.",
+                "Selected PE/PB anchor + PEG + DCF + Mid-cycle + NAV to satisfy multi-model cross validation for China equities."
         );
     }
 }

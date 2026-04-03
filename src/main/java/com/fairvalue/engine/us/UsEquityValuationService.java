@@ -50,6 +50,7 @@ public class UsEquityValuationService {
     private final UsDataQualityAuditService usDataQualityAuditService;
     private final UsConfiguredValuationModelsService usConfiguredValuationModelsService;
     private final UsValuationPersistenceService usValuationPersistenceService;
+    private final UsValuationReadService usValuationReadService;
     private final FinancialDerivedMetricsRepository financialDerivedMetricsRepository;
     private final FinancialQualityScoresRepository financialQualityScoresRepository;
     private final SourceRegistryRepository sourceRegistryRepository;
@@ -67,6 +68,7 @@ public class UsEquityValuationService {
             UsDataQualityAuditService usDataQualityAuditService,
             UsConfiguredValuationModelsService usConfiguredValuationModelsService,
             UsValuationPersistenceService usValuationPersistenceService,
+            UsValuationReadService usValuationReadService,
             FinancialDerivedMetricsRepository financialDerivedMetricsRepository,
             FinancialQualityScoresRepository financialQualityScoresRepository,
             SourceRegistryRepository sourceRegistryRepository,
@@ -83,6 +85,7 @@ public class UsEquityValuationService {
         this.usDataQualityAuditService = usDataQualityAuditService;
         this.usConfiguredValuationModelsService = usConfiguredValuationModelsService;
         this.usValuationPersistenceService = usValuationPersistenceService;
+        this.usValuationReadService = usValuationReadService;
         this.financialDerivedMetricsRepository = financialDerivedMetricsRepository;
         this.financialQualityScoresRepository = financialQualityScoresRepository;
         this.sourceRegistryRepository = sourceRegistryRepository;
@@ -305,6 +308,14 @@ public class UsEquityValuationService {
     }
 
     public UsValuationRunResponse runValuation(String ticker, UsValuationRunRequest request) {
+        return executeValuation(ticker, request, "manual", true).run();
+    }
+
+    public UsValuationRunResponse runScheduledValuation(String ticker) {
+        return executeValuation(ticker, UsValuationRunRequest.defaults(), "scheduled", true).run();
+    }
+
+    private ComputedValuation executeValuation(String ticker, UsValuationRunRequest request, String runMode, boolean persist) {
         UsValuationRunRequest effective = normalize(request);
         StockSnapshot snapshot = usSnapshot(ticker);
         UsSecClient.UsSecProfile profile = usProfile(ticker);
@@ -389,27 +400,7 @@ public class UsEquityValuationService {
                 riskMatrixResult.valueTrapFlag()
         );
         UsValuationExplanationResponse explanation = buildExplanationResponse(explanationBlocks);
-
-        usValuationPersistenceService.persistRun(
-                ticker,
-                effective,
-                snapshot,
-                base,
-                selectedMethods,
-                methodOutputs,
-                scenarioMatrix,
-                riskMatrix,
-                explanationBlocks,
-                range,
-                range.mid(),
-                effectiveConfidence,
-                marginOfSafety,
-                configured.reverseDcfAnalysis(),
-                summary.verdict(),
-                classified
-        );
-
-        return new UsValuationRunResponse(
+        UsValuationRunResponse runResponse = new UsValuationRunResponse(
                 snapshot.symbol(),
                 selectedMethods.stream().map(UsConfiguredMethodValuation::method).toList(),
                 methodOutputs,
@@ -425,23 +416,79 @@ public class UsEquityValuationService {
                 decision,
                 explanation
         );
+        UsValuationReportResponse report = buildReportResponse(
+                ticker,
+                snapshot,
+                runResponse,
+                dataQuality,
+                quality,
+                profileResponse,
+                dataQualityAudit
+        );
+        if (persist) {
+            usValuationPersistenceService.persistRun(
+                    ticker,
+                    effective,
+                    snapshot,
+                    base,
+                    selectedMethods,
+                    methodOutputs,
+                    scenarioMatrix,
+                    riskMatrix,
+                    explanationBlocks,
+                    range,
+                    range.mid(),
+                    effectiveConfidence,
+                    marginOfSafety,
+                    configured.reverseDcfAnalysis(),
+                    summary.verdict(),
+                    classified,
+                    runMode,
+                    summary,
+                    decision,
+                    explanation,
+                    report,
+                    quality.totalQualityScore(),
+                    dataQuality.confidenceLevel()
+            );
+        }
+        return new ComputedValuation(runResponse, report);
     }
 
     public UsValuationSummaryResponse summary(String ticker) {
-        return runValuation(ticker, new UsValuationRunRequest("balanced", "6-18m", true, List.of(), Map.of())).summary();
+        return usValuationReadService.findLatestSummary(ticker)
+                .orElseGet(() -> executeValuation(
+                        ticker,
+                        UsValuationRunRequest.defaults(),
+                        "api",
+                        true
+                ).run().summary());
     }
 
     public UsValuationReportResponse report(String ticker) {
-        UsValuationRunResponse run = runValuation(ticker, new UsValuationRunRequest("balanced", "6-18m", true, List.of(), Map.of()));
-        UsDataQualityResponse dataQuality = dataQuality(ticker);
-        UsFinancialQualityResponse quality = financialQuality(ticker);
-        UsEquityProfileResponse profileResponse = profile(ticker);
-        Map<String, Object> dataQualityAudit = buildDataQualityAudit(dataQuality);
+        return usValuationReadService.findLatestReport(ticker)
+                .orElseGet(() -> executeValuation(
+                        ticker,
+                        UsValuationRunRequest.defaults(),
+                        "api",
+                        true
+                ).report());
+    }
+
+    private UsValuationReportResponse buildReportResponse(
+            String ticker,
+            StockSnapshot snapshot,
+            UsValuationRunResponse run,
+            UsDataQualityResponse dataQuality,
+            UsFinancialQualityResponse quality,
+            UsEquityProfileResponse profileResponse,
+            Map<String, Object> dataQualityAudit
+    ) {
         Map<String, Object> businessAndMoat = buildBusinessAndMoat(profileResponse, quality);
         Map<String, Object> financialScorecard = buildFinancialScorecard(quality);
-        Map<String, Object> usMarketModifiers = buildMarketModifiers(usSnapshot(ticker), run, run.decision().sourceAttribution());
+        Map<String, Object> usMarketModifiers = buildMarketModifiers(snapshot, run, run.decision().sourceAttribution());
         Map<String, String> actionable = buildActionableFramework();
-        String uncertainty = buildUncertaintyAndErrorSources(usSnapshot(ticker), dataQuality, List.of());
+        String uncertainty = buildUncertaintyAndErrorSources(snapshot, dataQuality, List.of());
 
         return new UsValuationReportResponse(
                 ticker.toUpperCase(Locale.ROOT),
@@ -798,10 +845,16 @@ public class UsEquityValuationService {
                 // Keep source attribution best-effort; it must not break valuation output.
             }
         }
+        String erpSource = firstNonBlank(
+                parameterSources.get("wacc_erp"),
+                resolveConfiguredTemplateErpSource(parameterSources),
+                "configured_template"
+        );
+        parameterSources.putIfAbsent("wacc_erp", erpSource);
         attribution.put("parameter_sources", parameterSources);
         attribution.put("macro_sources", parameterSources.values().stream().distinct().toList());
         attribution.put("risk_free_rate_source", parameterSources.get("wacc_rf"));
-        attribution.put("erp_source", parameterSources.get("wacc_erp"));
+        attribution.put("erp_source", erpSource);
         attribution.put("beta_source", parameterSources.get("wacc_beta"));
         attribution.put("industry_multiple_source", firstNonBlank(
                 parameterSources.get("target_ev_ebitda"),
@@ -825,6 +878,17 @@ public class UsEquityValuationService {
         attribution.put("peer_set_tickers", peerSetTickers);
         attribution.put("source_attribution_version", "v2");
         return attribution;
+    }
+
+    private String resolveConfiguredTemplateErpSource(Map<String, String> parameterSources) {
+        if (parameterSources == null || parameterSources.isEmpty()) {
+            return null;
+        }
+        boolean hasDamodaranReference = parameterSources.values().stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(value -> value.toLowerCase(Locale.ROOT))
+                .anyMatch(value -> value.contains("damodaran"));
+        return hasDamodaranReference ? "configured_template:damodaran_ref" : "configured_template";
     }
 
     private String buildUncertaintyAndErrorSources(
@@ -1252,12 +1316,18 @@ public class UsEquityValuationService {
 
     private UsValuationRunRequest normalize(UsValuationRunRequest request) {
         if (request == null) {
-            return new UsValuationRunRequest("balanced", "6-18m", true, List.of(), Map.of());
+            return UsValuationRunRequest.defaults();
         }
         String style = request.style() == null || request.style().isBlank() ? "balanced" : request.style();
         String horizon = request.horizon() == null || request.horizon().isBlank() ? "6-18m" : request.horizon();
         List<String> forceMethods = request.forceMethods() == null ? List.of() : request.forceMethods();
         Map<String, Double> assumptions = request.customAssumptions() == null ? Map.of() : request.customAssumptions();
         return new UsValuationRunRequest(style, horizon, request.useConsensus(), forceMethods, assumptions);
+    }
+
+    private record ComputedValuation(
+            UsValuationRunResponse run,
+            UsValuationReportResponse report
+    ) {
     }
 }

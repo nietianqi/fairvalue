@@ -1,549 +1,206 @@
-﻿<!DOCTYPE html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>US Equity Admin Console</title>
-    <style>
-        :root {
-            --bg: #f4efe6;
-            --panel: rgba(255, 252, 246, 0.88);
-            --panel-strong: #fffaf0;
-            --line: rgba(63, 51, 33, 0.14);
-            --text: #1b2533;
-            --muted: #6d7683;
-            --accent: #0d6f63;
-            --accent-soft: #d8efe9;
-            --warm: #c96d2d;
-            --danger: #a93d30;
-            --shadow: 0 18px 40px rgba(48, 42, 32, 0.12);
-        }
-
-        * { box-sizing: border-box; }
-        body {
-            margin: 0;
-            font-family: "Space Grotesk", "Noto Sans SC", "Segoe UI", sans-serif;
-            color: var(--text);
-            background:
-                radial-gradient(circle at top left, rgba(13, 111, 99, 0.18), transparent 32%),
-                radial-gradient(circle at top right, rgba(201, 109, 45, 0.18), transparent 28%),
-                linear-gradient(180deg, #f9f5ed 0%, #f0ebe1 100%);
-            min-height: 100vh;
-        }
-
-        .shell {
-            width: min(1240px, calc(100% - 32px));
-            margin: 32px auto 48px;
-        }
-
-        .hero, .panel {
-            background: var(--panel);
-            backdrop-filter: blur(16px);
-            border: 1px solid var(--line);
-            border-radius: 24px;
-            box-shadow: var(--shadow);
-        }
-
-        .hero {
-            padding: 28px 28px 24px;
-            margin-bottom: 20px;
-        }
-
-        .eyebrow {
-            font-size: 12px;
-            letter-spacing: 0.22em;
-            text-transform: uppercase;
-            color: var(--accent);
-            font-weight: 700;
-        }
-
-        h1 {
-            margin: 10px 0 8px;
-            font-size: clamp(30px, 4vw, 46px);
-            line-height: 1.05;
-        }
-
-        .hero p {
-            margin: 0;
-            color: var(--muted);
-            max-width: 860px;
-            font-size: 15px;
-            line-height: 1.7;
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: 1.2fr 0.8fr;
-            gap: 20px;
-        }
-
-        .panel {
-            padding: 22px;
-        }
-
-        .panel h2 {
-            margin: 0 0 16px;
-            font-size: 22px;
-        }
-
-        .controls {
-            display: grid;
-            gap: 14px;
-        }
-
-        .ticker-row {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .ticker-row label {
-            font-size: 13px;
-            color: var(--muted);
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-        }
-
-        .ticker-row input {
-            min-width: 220px;
-            padding: 14px 16px;
-            border-radius: 14px;
-            border: 1px solid var(--line);
-            background: var(--panel-strong);
-            font: inherit;
-            color: var(--text);
-        }
-
-        .button-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-
-        button {
-            border: 0;
-            border-radius: 14px;
-            padding: 13px 18px;
-            font: inherit;
-            font-weight: 700;
-            cursor: pointer;
-            transition: transform 0.18s ease, opacity 0.18s ease;
-        }
-
-        button:hover { transform: translateY(-1px); }
-        button:disabled { opacity: 0.6; cursor: wait; transform: none; }
-
-        .primary { background: var(--accent); color: white; }
-        .secondary { background: var(--accent-soft); color: var(--accent); }
-        .warm { background: #ffe6d3; color: var(--warm); }
-        .ghost { background: #eef1f4; color: var(--text); }
-
-        .metrics {
-            display: grid;
-            grid-template-columns: repeat(5, minmax(0, 1fr));
-            gap: 12px;
-            margin-top: 18px;
-        }
-
-        .metric {
-            padding: 16px;
-            border-radius: 18px;
-            background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(247,243,235,0.92));
-            border: 1px solid var(--line);
-        }
-
-        .metric span {
-            display: block;
-            font-size: 12px;
-            color: var(--muted);
-            margin-bottom: 8px;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-        }
-
-        .metric strong {
-            font-size: 28px;
-            line-height: 1;
-        }
-
-        .status {
-            margin-top: 16px;
-            padding: 12px 14px;
-            border-radius: 14px;
-            background: #eef9f7;
-            color: var(--accent);
-            font-size: 14px;
-            min-height: 46px;
-            display: flex;
-            align-items: center;
-        }
-
-        .status.error {
-            background: #fff0ee;
-            color: var(--danger);
-        }
-
-        .tables {
-            display: grid;
-            gap: 18px;
-            margin-top: 20px;
-        }
-
-        .table-card {
-            border: 1px solid var(--line);
-            border-radius: 18px;
-            overflow: hidden;
-            background: rgba(255,255,255,0.72);
-        }
-
-        .table-head {
-            padding: 14px 16px;
-            font-weight: 700;
-            border-bottom: 1px solid var(--line);
-            background: rgba(13, 111, 99, 0.06);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-        }
-
-        th, td {
-            padding: 12px 14px;
-            border-bottom: 1px solid rgba(63, 51, 33, 0.08);
-            text-align: left;
-            vertical-align: top;
-        }
-
-        th {
-            font-size: 12px;
-            color: var(--muted);
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-        }
-
-        pre {
-            margin: 0;
-            padding: 18px;
-            border-radius: 18px;
-            background: #131922;
-            color: #eaf2ff;
-            overflow: auto;
-            font-size: 12px;
-            line-height: 1.55;
-            min-height: 220px;
-        }
-
-        .small-note {
-            margin-top: 14px;
-            font-size: 13px;
-            color: var(--muted);
-            line-height: 1.6;
-        }
-
-        @media (max-width: 980px) {
-            .grid { grid-template-columns: 1fr; }
-            .metrics { grid-template-columns: 1fr; }
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>美股运维控制台</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/us-admin-console.css?v=20260402-admin" />
 </head>
 <body>
-<div class="shell">
-    <section class="hero">
-        <div class="eyebrow">Fairvalue Engine Ops</div>
-        <h1>US Equity Admin Console</h1>
-                <p>这个页面专门给我们做美股数据运维：同步 SEC universe、单票拉取 submissions 和 companyfacts、执行标准化、刷新 data quality audit，并直接查看 PostgreSQL 里的落库计数和样本明细。</p>
+  <main class="shell">
+    <section class="hero panel">
+      <div class="hero-top">
+        <div>
+          <div class="eyebrow">Fairvalue Ops</div>
+          <h1>US Equity Admin Console</h1>
+          <p>这里把美股数据同步、标准化、估值刷新、任务监控和数据源状态放到同一个控制台里。我们先把最常用的运维路径做成真正可用的前端，而不是只看原始 JSON。</p>
+        </div>
+        <div class="hero-links">
+          <a class="hero-link" href="/cn-undervalued-stocks.html">全球榜单</a>
+          <a class="hero-link" href="/valuation-screener.html">估值筛选器</a>
+          <a class="hero-link ghost" id="detailLink" href="/us-stock-detail.html?ticker=AAPL">股票详情</a>
+        </div>
+      </div>
+      <div class="hero-badges">
+        <span class="hero-badge">SEC / IR / Market Sync</span>
+        <span class="hero-badge">Valuation Jobs Monitoring</span>
+        <span class="hero-badge subtle" id="heroStatus">等待加载</span>
+      </div>
     </section>
 
-    <section class="grid">
-        <div class="panel">
-            <h2>操作台</h2>
-            <div class="controls">
-                <div class="ticker-row">
-                    <label for="tickerInput">Ticker</label>
-                    <input id="tickerInput" value="AAPL" autocomplete="off" />
-                </div>
-                <div class="button-row">
-                    <button class="primary" id="overviewBtn">刷新概览</button>
-                    <button class="secondary" id="marketSyncBtn">Market Sync</button>
-                    <button class="secondary" id="secSyncBtn">SEC Sync</button>
-                    <button class="secondary" id="irSyncBtn">IR Sync</button>
-                    <button class="warm" id="standardizeBtn">Standardize</button>
-                    <button class="ghost" id="universeBtn">Universe Sync</button>
-                </div>
-                <div class="status" id="statusBox">等待操作</div>
-            </div>
-
-            <div class="metrics">
-                <div class="metric">
-                    <span>Source Documents</span>
-                    <strong id="docCount">-</strong>
-                </div>
-                <div class="metric">
-                    <span>Company IR Docs</span>
-                    <strong id="irDocCount">-</strong>
-                </div>
-                <div class="metric">
-                    <span>Raw Facts</span>
-                    <strong id="rawCount">-</strong>
-                </div>
-                <div class="metric">
-                    <span>Financial Standardized</span>
-                    <strong id="stdCount">-</strong>
-                </div>
-                <div class="metric">
-                    <span>Derived Metrics</span>
-                    <strong id="derivedCount">-</strong>
-                </div>
-                <div class="metric">
-                    <span>Quality Scores</span>
-                    <strong id="qualityCount">-</strong>
-                </div>
-                <div class="metric">
-                    <span>Data Quality Audits</span>
-                    <strong id="auditCount">-</strong>
-                </div>
-                <div class="metric">
-                    <span>Market Raw</span>
-                    <strong id="marketRawCount">-</strong>
-                </div>
-                <div class="metric">
-                    <span>Market Daily</span>
-                    <strong id="marketDailyCount">-</strong>
-                </div>
-                <div class="metric">
-                    <span>Market Snapshots</span>
-                    <strong id="marketSnapshotCount">-</strong>
-                </div>
-                <div class="metric">
-                    <span>Intraday Snapshots</span>
-                    <strong id="marketIntradayCount">-</strong>
-                </div>
-            </div>
-
-            <div class="small-note" id="classificationLine">分类: -</div>
-
-            <div class="tables">
-                <div class="table-card">
-                    <div class="table-head">Latest Documents</div>
-                    <div id="documentsTable"></div>
-                </div>
-                <div class="table-card">
-                    <div class="table-head">Latest Company IR Documents</div>
-                    <div id="companyIrTable"></div>
-                </div>
-                <div class="table-card">
-                    <div class="table-head">Latest Raw Facts</div>
-                    <div id="rawFactsTable"></div>
-                </div>
-                <div class="table-card">
-                    <div class="table-head">Latest Financial Standardized</div>
-                    <div id="standardizedTable"></div>
-                </div>
-                <div class="table-card">
-                    <div class="table-head">Latest Financial Derived Metrics</div>
-                    <div id="derivedTable"></div>
-                </div>
-                <div class="table-card">
-                    <div class="table-head">Latest Financial Quality Scores</div>
-                    <div id="qualityTable"></div>
-                </div>
-                <div class="table-card">
-                    <div class="table-head">Latest Data Quality Audits</div>
-                    <div id="auditTable"></div>
-                </div>
-            </div>
+    <section class="layout">
+      <aside class="panel sidebar">
+        <div class="panel-head">
+          <h2>操作台</h2>
+          <p>按常用顺序完成单票同步、标准化和重估值。</p>
         </div>
 
-        <div class="panel">
-            <h2>最后一次返回</h2>
-            <pre id="responseBox">{}</pre>
-            <div class="small-note">
-                建议顺序：
-                1. 先点 <strong>SEC Sync</strong>
-                2. 有需要时点 <strong>IR Sync</strong>
-                3. 再点 <strong>Standardize</strong>
-                4. 最后点 <strong>刷新概览</strong>
-            </div>
+        <label class="field">
+          <span>Ticker</span>
+          <input id="tickerInput" value="AAPL" autocomplete="off" />
+        </label>
+
+        <div class="button-stack">
+          <button class="primary" id="overviewBtn" type="button">刷新概览</button>
+          <button class="secondary" id="sourceStatusBtn" type="button">查看 Source Status</button>
+          <button class="secondary" id="marketSyncBtn" type="button">Market Sync</button>
+          <button class="secondary" id="secSyncBtn" type="button">SEC Sync</button>
+          <button class="secondary" id="irSyncBtn" type="button">IR Sync</button>
+          <button class="warm" id="standardizeBtn" type="button">Standardize</button>
+          <button class="primary soft" id="runValuationBtn" type="button">手动重估值</button>
+          <button class="secondary" id="retryTickerJobsBtn" type="button">重试本票失败任务</button>
+          <button class="secondary" id="retryGlobalJobsBtn" type="button">重试全局失败任务</button>
+          <button class="ghost" id="recoverStaleBtn" type="button">恢复卡住任务</button>
+          <button class="ghost" id="universeBtn" type="button">Universe Sync</button>
         </div>
+
+        <div class="status-box" id="statusBox">等待操作</div>
+
+        <div class="mini-grid" id="jobSummaryCards">
+          <article class="mini-card"><span>Queued</span><strong>-</strong></article>
+          <article class="mini-card"><span>Running</span><strong>-</strong></article>
+          <article class="mini-card"><span>Completed</span><strong>-</strong></article>
+          <article class="mini-card"><span>Failed</span><strong>-</strong></article>
+        </div>
+
+        <div class="source-status-panel">
+          <div class="section-title-row">
+            <h3>数据源状态</h3>
+            <span class="subtle" id="sourceAsOf">-</span>
+          </div>
+          <div class="source-card-grid" id="sourceCards"></div>
+        </div>
+
+        <div class="source-status-panel">
+          <div class="section-title-row">
+            <h3>任务告警</h3>
+            <span class="subtle" id="alertsAsOf">-</span>
+          </div>
+          <div class="source-card-grid" id="alertCards"></div>
+        </div>
+
+        <div class="source-status-panel">
+          <div class="section-title-row">
+            <h3>平台配额</h3>
+            <span class="subtle" id="platformPlan">-</span>
+          </div>
+          <div class="mini-grid" id="platformCards">
+            <article class="mini-card"><span>RPM</span><strong>-</strong></article>
+            <article class="mini-card"><span>Today</span><strong>-</strong></article>
+            <article class="mini-card"><span>Routes</span><strong>-</strong></article>
+            <article class="mini-card"><span>Last Seen</span><strong>-</strong></article>
+          </div>
+        </div>
+      </aside>
+
+      <section class="content">
+        <div class="panel quick-panel">
+          <div class="panel-head panel-head-row">
+            <div>
+              <h2>数据快照</h2>
+              <p>把 overview 里最常看的计数和分类信息放到上面，减少来回翻 JSON。</p>
+            </div>
+            <div class="meta-line" id="classificationLine">分类：-</div>
+          </div>
+          <div class="metrics-grid" id="metricCards">
+            <article class="metric-card"><span>Source Docs</span><strong id="docCount">-</strong></article>
+            <article class="metric-card"><span>IR Docs</span><strong id="irDocCount">-</strong></article>
+            <article class="metric-card"><span>Raw Facts</span><strong id="rawCount">-</strong></article>
+            <article class="metric-card"><span>Standardized</span><strong id="stdCount">-</strong></article>
+            <article class="metric-card"><span>Derived</span><strong id="derivedCount">-</strong></article>
+            <article class="metric-card"><span>Quality</span><strong id="qualityCount">-</strong></article>
+            <article class="metric-card"><span>Audits</span><strong id="auditCount">-</strong></article>
+            <article class="metric-card"><span>Market Daily</span><strong id="marketDailyCount">-</strong></article>
+            <article class="metric-card"><span>Snapshots</span><strong id="marketSnapshotCount">-</strong></article>
+            <article class="metric-card"><span>Valuation Runs</span><strong id="valuationRunCount">-</strong></article>
+            <article class="metric-card"><span>Latest Snapshot</span><strong id="latestSnapshotFlag">-</strong></article>
+            <article class="metric-card"><span>Valuation Jobs</span><strong id="valuationJobCount">-</strong></article>
+          </div>
+        </div>
+
+        <div class="panel split-panel">
+          <section>
+            <div class="section-title-row">
+              <h3>最近任务</h3>
+              <span class="subtle" id="tickerJobsMeta">-</span>
+            </div>
+            <div class="table-shell" id="tickerJobsTable"></div>
+          </section>
+          <section>
+            <div class="section-title-row">
+              <h3>全局最近任务</h3>
+              <span class="subtle" id="globalJobsMeta">-</span>
+            </div>
+            <div class="table-shell" id="globalJobsTable"></div>
+          </section>
+        </div>
+
+        <div class="panel split-panel">
+          <section>
+            <div class="section-title-row">
+              <h3>最新 Documents</h3>
+              <span class="subtle">SEC / IR 落库</span>
+            </div>
+            <div class="table-shell" id="documentsTable"></div>
+          </section>
+          <section>
+            <div class="section-title-row">
+              <h3>最新 Raw Facts</h3>
+              <span class="subtle">XBRL / companyfacts</span>
+            </div>
+            <div class="table-shell" id="rawFactsTable"></div>
+          </section>
+        </div>
+
+        <div class="panel split-panel">
+          <section>
+            <div class="section-title-row">
+              <h3>最新 Standardized</h3>
+              <span class="subtle">标准化财务</span>
+            </div>
+            <div class="table-shell" id="standardizedTable"></div>
+          </section>
+          <section>
+            <div class="section-title-row">
+              <h3>最新 Derived Metrics</h3>
+              <span class="subtle">ROIC / FCF margin / BVPS</span>
+            </div>
+            <div class="table-shell" id="derivedTable"></div>
+          </section>
+        </div>
+
+        <div class="panel split-panel">
+          <section>
+            <div class="section-title-row">
+              <h3>最新 Quality Scores</h3>
+              <span class="subtle">财务质量评分</span>
+            </div>
+            <div class="table-shell" id="qualityTable"></div>
+          </section>
+          <section>
+            <div class="section-title-row">
+              <h3>最新 Data Quality Audits</h3>
+              <span class="subtle">数据完整性和置信度</span>
+            </div>
+            <div class="table-shell" id="auditTable"></div>
+          </section>
+        </div>
+
+        <div class="panel response-panel">
+          <div class="section-title-row">
+            <h3>最后一次返回</h3>
+            <span class="subtle">给我们排查时保留原始响应</span>
+          </div>
+          <pre id="responseBox">{}</pre>
+        </div>
+      </section>
     </section>
-</div>
+  </main>
 
-<script>
-    const tickerInput = document.getElementById("tickerInput");
-    const statusBox = document.getElementById("statusBox");
-    const responseBox = document.getElementById("responseBox");
-    const docCount = document.getElementById("docCount");
-    const irDocCount = document.getElementById("irDocCount");
-    const rawCount = document.getElementById("rawCount");
-    const stdCount = document.getElementById("stdCount");
-    const derivedCount = document.getElementById("derivedCount");
-    const qualityCount = document.getElementById("qualityCount");
-    const auditCount = document.getElementById("auditCount");
-    const marketRawCount = document.getElementById("marketRawCount");
-    const marketDailyCount = document.getElementById("marketDailyCount");
-    const marketSnapshotCount = document.getElementById("marketSnapshotCount");
-    const marketIntradayCount = document.getElementById("marketIntradayCount");
-    const classificationLine = document.getElementById("classificationLine");
-    const documentsTable = document.getElementById("documentsTable");
-    const companyIrTable = document.getElementById("companyIrTable");
-    const rawFactsTable = document.getElementById("rawFactsTable");
-    const standardizedTable = document.getElementById("standardizedTable");
-    const derivedTable = document.getElementById("derivedTable");
-    const qualityTable = document.getElementById("qualityTable");
-    const auditTable = document.getElementById("auditTable");
-    const buttons = Array.from(document.querySelectorAll("button"));
-
-    function ticker() {
-        return tickerInput.value.trim().toUpperCase() || "AAPL";
-    }
-
-    function setBusy(flag) {
-        buttons.forEach(button => button.disabled = flag);
-    }
-
-    function setStatus(message, isError = false) {
-        statusBox.textContent = message;
-        statusBox.classList.toggle("error", isError);
-    }
-
-    function renderJson(payload) {
-        responseBox.textContent = JSON.stringify(payload, null, 2);
-    }
-
-    function renderTable(container, columns, rows) {
-        if (!rows || !rows.length) {
-            container.innerHTML = '<div style="padding:16px;color:#6d7683;">暂无数据</div>';
-            return;
-        }
-        const thead = columns.map(column => `<th>${column.label}</th>`).join("");
-        const tbody = rows.map(row => {
-            const cells = columns.map(column => `<td>${row[column.key] ?? "-"}</td>`).join("");
-            return `<tr>${cells}</tr>`;
-        }).join("");
-        container.innerHTML = `<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>`;
-    }
-
-    async function callApi(url, options = {}) {
-        setBusy(true);
-        setStatus(`请求中: ${url}`);
-        try {
-            const response = await fetch(url, options);
-            const payload = await response.json();
-            renderJson(payload);
-            if (!response.ok) {
-                throw new Error(payload.message || `HTTP ${response.status}`);
-            }
-            setStatus(`完成: ${url}`);
-            return payload;
-        } catch (error) {
-            setStatus(error.message, true);
-            throw error;
-        } finally {
-            setBusy(false);
-        }
-    }
-
-    async function refreshOverview() {
-        const payload = await callApi(`/v1/us-equities-admin/${ticker()}/overview`);
-        docCount.textContent = payload.source_document_count;
-        irDocCount.textContent = payload.company_ir_document_count;
-        rawCount.textContent = payload.raw_fact_count;
-        stdCount.textContent = payload.financial_standardized_count;
-        derivedCount.textContent = payload.financial_derived_metric_count;
-        qualityCount.textContent = payload.financial_quality_score_count;
-        auditCount.textContent = payload.data_quality_audit_count;
-        marketRawCount.textContent = payload.market_data_raw_count;
-        marketDailyCount.textContent = payload.market_price_daily_count;
-        marketSnapshotCount.textContent = payload.market_snapshot_count;
-        marketIntradayCount.textContent = payload.market_intraday_snapshot_count;
-        classificationLine.textContent = `分类: ${payload.company_type || "-"} | 模板: ${payload.sector_template || "-"} | 行业: ${payload.industry || "-"}`;
-
-        renderTable(documentsTable, [
-            { key: "document_type", label: "Type" },
-            { key: "filing_date", label: "Filing Date" },
-            { key: "accession_no", label: "Accession" },
-            { key: "parsed_status", label: "Status" }
-        ], payload.latest_documents);
-
-        renderTable(companyIrTable, [
-            { key: "document_type", label: "Type" },
-            { key: "filing_date", label: "Date" },
-            { key: "document_title", label: "Title" },
-            { key: "document_url", label: "URL" }
-        ], payload.latest_company_ir_documents);
-
-        renderTable(rawFactsTable, [
-            { key: "document_type", label: "Doc" },
-            { key: "concept_name", label: "Concept" },
-            { key: "unit", label: "Unit" },
-            { key: "period_end", label: "Period End" },
-            { key: "value_numeric", label: "Value" }
-        ], payload.latest_raw_facts);
-
-        renderTable(standardizedTable, [
-            { key: "period_type", label: "Type" },
-            { key: "fiscal_year", label: "FY" },
-            { key: "fiscal_period", label: "FP" },
-            { key: "period_end", label: "Period End" },
-            { key: "revenue", label: "Revenue" },
-            { key: "net_income", label: "Net Income" },
-            { key: "free_cash_flow", label: "FCF" }
-        ], payload.latest_financial_standardized);
-
-        renderTable(derivedTable, [
-            { key: "period_type", label: "Type" },
-            { key: "fiscal_year", label: "FY" },
-            { key: "fiscal_period", label: "FP" },
-            { key: "period_end", label: "Period End" },
-            { key: "roic", label: "ROIC" },
-            { key: "fcf_margin", label: "FCF Margin" },
-            { key: "book_value_per_share", label: "BVPS" }
-        ], payload.latest_financial_derived_metrics);
-
-        renderTable(qualityTable, [
-            { key: "period_type", label: "Type" },
-            { key: "period_end", label: "Period End" },
-            { key: "earnings_quality_score", label: "Earnings" },
-            { key: "balance_sheet_score", label: "Balance Sheet" },
-            { key: "capital_efficiency_score", label: "Capital Efficiency" },
-            { key: "total_quality_score", label: "Total" }
-        ], payload.latest_financial_quality_scores);
-
-        renderTable(auditTable, [
-            { key: "audit_date", label: "Audit Date" },
-            { key: "latest_10k_date", label: "Latest 10-K" },
-            { key: "latest_10q_date", label: "Latest 10-Q" },
-            { key: "guidance_status", label: "Guidance" },
-            { key: "confidence_level", label: "Confidence" }
-        ], payload.latest_data_quality_audits);
-    }
-
-    document.getElementById("overviewBtn").addEventListener("click", refreshOverview);
-    document.getElementById("marketSyncBtn").addEventListener("click", async () => {
-        await callApi(`/v1/us-equities-admin/${ticker()}/market-sync`, { method: "POST" });
-        await refreshOverview();
-    });
-    document.getElementById("secSyncBtn").addEventListener("click", async () => {
-        await callApi(`/v1/us-equities-admin/${ticker()}/sec-sync`, { method: "POST" });
-        await refreshOverview();
-    });
-    document.getElementById("irSyncBtn").addEventListener("click", async () => {
-        await callApi(`/v1/us-equities-admin/${ticker()}/ir-sync`, { method: "POST" });
-        await refreshOverview();
-    });
-    document.getElementById("standardizeBtn").addEventListener("click", async () => {
-        await callApi(`/v1/us-equities-admin/${ticker()}/standardize`, { method: "POST" });
-        await refreshOverview();
-    });
-    document.getElementById("universeBtn").addEventListener("click", async () => {
-        await callApi(`/v1/us-equities-admin/universe/sync`, { method: "POST" });
-    });
-
-    refreshOverview().catch(() => {});
-</script>
+  <script src="/assets/platform-client.js?v=20260403-platformfix" defer></script>
+  <script src="/assets/us-admin-console.js?v=20260403-platform" defer></script>
 </body>
 </html>

@@ -113,6 +113,24 @@ public class MarketPriceDailyRepository {
                 .list();
     }
 
+    public List<UsMarketPriceDailyRecord> findRecentHistoryBySecurityId(long securityId, int limit) {
+        return jdbcClient.sql("""
+                        SELECT trade_date,
+                               close
+                        FROM fairvalue.market_price_daily
+                        WHERE security_id = :securityId
+                        ORDER BY trade_date DESC
+                        LIMIT :limit
+                        """)
+                .param("securityId", securityId)
+                .param("limit", limit)
+                .query(rowMapper())
+                .list()
+                .stream()
+                .sorted(java.util.Comparator.comparing(UsMarketPriceDailyRecord::tradeDate))
+                .toList();
+    }
+
     private RowMapper<UsMarketPriceDailyRecord> rowMapper() {
         return (rs, rowNum) -> new UsMarketPriceDailyRecord(
                 rs.getObject("trade_date", LocalDate.class),

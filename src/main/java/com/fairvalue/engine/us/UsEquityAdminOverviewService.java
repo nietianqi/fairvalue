@@ -11,6 +11,8 @@ import com.fairvalue.engine.repository.MarketSnapshotRepository;
 import com.fairvalue.engine.repository.SourceDocumentFactRawRepository;
 import com.fairvalue.engine.repository.SourceDocumentRepository;
 import com.fairvalue.engine.repository.SourceRegistryRepository;
+import com.fairvalue.engine.repository.ValuationLatestSnapshotRepository;
+import com.fairvalue.engine.repository.ValuationRunsRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -29,6 +31,9 @@ public class UsEquityAdminOverviewService {
     private final MarketSnapshotRepository marketSnapshotRepository;
     private final MarketIntradaySnapshotRepository marketIntradaySnapshotRepository;
     private final SourceRegistryRepository sourceRegistryRepository;
+    private final ValuationRunsRepository valuationRunsRepository;
+    private final ValuationLatestSnapshotRepository valuationLatestSnapshotRepository;
+    private final UsValuationJobService usValuationJobService;
 
     public UsEquityAdminOverviewService(
             UsSecurityMasterService usSecurityMasterService,
@@ -42,7 +47,10 @@ public class UsEquityAdminOverviewService {
             MarketPriceDailyRepository marketPriceDailyRepository,
             MarketSnapshotRepository marketSnapshotRepository,
             MarketIntradaySnapshotRepository marketIntradaySnapshotRepository,
-            SourceRegistryRepository sourceRegistryRepository
+            SourceRegistryRepository sourceRegistryRepository,
+            ValuationRunsRepository valuationRunsRepository,
+            ValuationLatestSnapshotRepository valuationLatestSnapshotRepository,
+            UsValuationJobService usValuationJobService
     ) {
         this.usSecurityMasterService = usSecurityMasterService;
         this.sourceDocumentRepository = sourceDocumentRepository;
@@ -56,6 +64,9 @@ public class UsEquityAdminOverviewService {
         this.marketSnapshotRepository = marketSnapshotRepository;
         this.marketIntradaySnapshotRepository = marketIntradaySnapshotRepository;
         this.sourceRegistryRepository = sourceRegistryRepository;
+        this.valuationRunsRepository = valuationRunsRepository;
+        this.valuationLatestSnapshotRepository = valuationLatestSnapshotRepository;
+        this.usValuationJobService = usValuationJobService;
     }
 
     public AdminOverview overview(String rawTicker) {
@@ -85,13 +96,17 @@ public class UsEquityAdminOverviewService {
                 marketPriceDailyRepository.countBySecurityId(securityId),
                 marketSnapshotRepository.countBySecurityId(securityId),
                 marketIntradaySnapshotRepository.countBySecurityId(securityId),
+                valuationRunsRepository.countBySecurityId(securityId),
+                valuationLatestSnapshotRepository.findByTicker(ticker).isPresent(),
+                usValuationJobService.countForTicker(ticker),
                 sourceDocumentRepository.findLatestBySecurityId(securityId, 5),
                 companyIrSourceId < 0 ? List.of() : sourceDocumentRepository.findLatestBySecurityIdAndSourceId(securityId, companyIrSourceId, 5),
                 sourceDocumentFactRawRepository.findLatestBySecurityId(securityId, 5),
                 financialStandardizedRepository.findLatestBySecurityId(securityId, 5),
                 financialDerivedMetricsRepository.findLatestBySecurityId(securityId, 5),
                 financialQualityScoresRepository.findLatestBySecurityId(securityId, 5),
-                dataQualityAuditRepository.findLatestBySecurityId(securityId, 5)
+                dataQualityAuditRepository.findLatestBySecurityId(securityId, 5),
+                usValuationJobService.recentJobsForTicker(ticker, 5)
         );
     }
 
@@ -121,13 +136,17 @@ public class UsEquityAdminOverviewService {
             long marketPriceDailyCount,
             long marketSnapshotCount,
             long marketIntradaySnapshotCount,
+            long valuationRunCount,
+            boolean latestValuationSnapshotPresent,
+            long valuationJobCount,
             List<UsSourceDocument> latestDocuments,
             List<UsSourceDocument> latestCompanyIrDocuments,
             List<UsRawFactEntry> latestRawFacts,
             List<UsFinancialStandardizedRecord> latestFinancialStandardized,
             List<UsFinancialDerivedMetricRecord> latestFinancialDerivedMetrics,
             List<UsFinancialQualityScoreRecord> latestFinancialQualityScores,
-            List<UsDataQualityAuditRecord> latestDataQualityAudits
+            List<UsDataQualityAuditRecord> latestDataQualityAudits,
+            List<UsValuationJobRecord> latestValuationJobs
     ) {
     }
 }

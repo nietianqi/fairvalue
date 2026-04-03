@@ -1,18 +1,31 @@
 # Valuation Method Roadmap
 
+说明：
+
+1. 这份文件是跨市场方法演进路线图，不是美股终版基线。
+2. 美股当前应优先参考：
+   - [美国股票估值.md](F:/fairvalue/美国股票估值.md)
+   - [us-equity-final-plan-v2-alignment.md](F:/fairvalue/docs/us-equity-final-plan-v2-alignment.md)
+3. 如果本文件与上述两份文档冲突，以终版对齐文档为准。
+
 This file defines how to deepen market valuation methods in later iterations.
 
 ## US (United States)
 
 Current scaffold:
-- DCF + EV/EBITDA + PEG
-- Growth/expectation/SBC adjustments
+- DCF / FCFF
+- Historical Multiple
+- Relative Valuation
+- Reverse DCF
+- Risk matrix + persisted valuation runs
 
 Next upgrades:
-1. Add reverse DCF to estimate implied growth from market price.
-2. Add sector templates: SaaS (Rule of 40), semis (cycle + capex), REIT/financial models.
-3. Add share-count forecast for buyback and SBC dilution trajectory.
-4. Add analyst consensus term structure (`FY1`, `FY2`, `LT`) and dispersion penalty.
+1. Replace research price source with Longbridge production source.
+2. Add FRED + Damodaran to formal WACC and parameter pipeline.
+3. Upgrade relative valuation to full peer-set engine.
+4. Add sector templates: SaaS, cyclical, REIT, bank/insurance, biotech, conglomerate.
+5. Add share-count forecast for buyback and SBC dilution trajectory.
+6. Add analyst consensus term structure (`FY1`, `FY2`, `LT`) and dispersion penalty.
 
 ## CN (China A-share)
 

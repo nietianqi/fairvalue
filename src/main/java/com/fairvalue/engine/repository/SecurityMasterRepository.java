@@ -65,6 +65,83 @@ public class SecurityMasterRepository {
                 .optional();
     }
 
+    public long countActiveByCountry(String country) {
+        Long count = jdbcClient.sql("""
+                        SELECT COUNT(*)
+                        FROM fairvalue.security_master
+                        WHERE country = :country
+                          AND is_active = TRUE
+                        """)
+                .param("country", country)
+                .query(Long.class)
+                .single();
+        return count == null ? 0L : count;
+    }
+
+    public List<UsSecurityMaster> findActiveByCountry(String country, int limit, int offset) {
+        return jdbcClient.sql("""
+                        SELECT sm.id,
+                               sm.ticker,
+                               sm.symbol_full,
+                               sm.company_name,
+                               sm.exchange,
+                               sm.currency,
+                               sm.sector,
+                               sm.industry,
+                               sm.subindustry,
+                               sm.company_type,
+                               sm.sector_template,
+                               sm.country,
+                               sm.is_active
+                        FROM fairvalue.security_master sm
+                        LEFT JOIN LATERAL (
+                            SELECT market_cap_vendor
+                            FROM fairvalue.market_snapshot
+                            WHERE security_id = sm.id
+                            ORDER BY snapshot_time DESC
+                            LIMIT 1
+                        ) ms ON TRUE
+                        WHERE sm.country = :country
+                          AND sm.is_active = TRUE
+                        ORDER BY ms.market_cap_vendor DESC NULLS LAST,
+                                 sm.ticker
+                        LIMIT :limit OFFSET :offset
+                        """)
+                .param("country", country)
+                .param("limit", limit)
+                .param("offset", offset)
+                .query(this::mapRow)
+                .list();
+    }
+
+    public List<String> findActiveTickersByCountry(String country, int limit) {
+        String sql = """
+                SELECT sm.ticker
+                FROM fairvalue.security_master sm
+                LEFT JOIN LATERAL (
+                    SELECT market_cap_vendor
+                    FROM fairvalue.market_snapshot
+                    WHERE security_id = sm.id
+                    ORDER BY snapshot_time DESC
+                    LIMIT 1
+                ) ms ON TRUE
+                WHERE sm.country = :country
+                  AND sm.is_active = TRUE
+                ORDER BY ms.market_cap_vendor DESC NULLS LAST,
+                         sm.ticker
+                """;
+        if (limit > 0) {
+            sql += "\nLIMIT :limit";
+        }
+
+        JdbcClient.StatementSpec spec = jdbcClient.sql(sql)
+                .param("country", country);
+        if (limit > 0) {
+            spec = spec.param("limit", limit);
+        }
+        return spec.query(String.class).list();
+    }
+
     public long insert(UsSecurityMaster security) {
         return jdbcClient.sql("""
                         INSERT INTO fairvalue.security_master (

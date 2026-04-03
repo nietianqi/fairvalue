@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>A股估值详情 — Fairvalue</title>
+  <link rel="stylesheet" href="/assets/us-stock-detail.css?v=20260402" />
+</head>
+<body>
+<div id="app">
+
+  <!-- Loading -->
+  <div id="loading" class="page" style="display:flex;align-items:center;justify-content:center;min-height:80vh">
+    <div style="text-align:center">
+      <div class="spinner" style="margin:0 auto 16px"></div>
+      <div style="color:var(--muted);font-size:14px">正在加载估值数据…</div>
+    </div>
+  </div>
+
+  <!-- Main content -->
+  <div id="main" class="page" style="display:none">
+
+    <!-- Page header -->
+    <div class="page-header">
+      <a href="/cn-undervalued-stocks.html" class="back-link">← 全球榜单</a>
+      <span class="header-ticker" id="hdr-ticker">—</span>
+      <span class="header-name" id="hdr-name"></span>
+      <span class="badge" id="hdr-exchange">CN</span>
+      <span class="badge badge-neutral" id="hdr-market">A股</span>
+      <div class="header-nav" style="margin-left:auto;display:flex;gap:8px;align-items:center">
+        <a href="/valuation-screener.html" class="nav-chip">估值筛选器</a>
+        <a href="/us-equities-admin.html" class="nav-chip ghost">Admin</a>
+      </div>
+    </div>
+
+    <!-- Hero band -->
+    <div class="hero">
+      <div class="hero-grid">
+        <!-- Current price -->
+        <div class="hero-metric">
+          <div class="hero-label">当前价格</div>
+          <div class="hero-price" id="hero-price">—</div>
+        </div>
+
+        <!-- Fair value range -->
+        <div class="hero-metric">
+          <div class="hero-label">公允价值区间</div>
+          <div class="fv-range">
+            <span class="fv-low" id="hero-fv-low">—</span>
+            <span class="fv-sep"> / </span>
+            <span class="fv-mid" id="hero-fv-mid">—</span>
+            <span class="fv-sep"> / </span>
+            <span class="fv-high" id="hero-fv-high">—</span>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">悲观 / 基准 / 乐观</div>
+        </div>
+
+        <!-- Upside -->
+        <div class="hero-metric">
+          <div class="hero-label">上行空间</div>
+          <div id="hero-upside" class="upside-value">—</div>
+        </div>
+
+        <!-- Verdict -->
+        <div class="hero-metric">
+          <div class="hero-label">估值判断</div>
+          <span id="hero-verdict" class="verdict-badge fair">—</span>
+        </div>
+      </div>
+
+      <hr class="hero-divider" />
+
+      <!-- Zones + Confidence -->
+      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:24px">
+        <div class="hero-zones" id="hero-zones-wrap">
+          <!-- Populated from operationZones after report loads -->
+        </div>
+        <div class="hero-meta" style="margin-left:auto">
+          <div class="confidence-wrap">
+            <span class="confidence-label">置信度</span>
+            <div class="confidence-bar">
+              <div class="confidence-fill" id="hero-conf-fill" style="width:0%"></div>
+            </div>
+            <span class="confidence-pct" id="hero-conf-pct">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab bar -->
+    <div class="tab-bar" role="tablist">
+      <button class="tab-btn active" role="tab" onclick="switchTab('overview',this)">概览</button>
+      <button class="tab-btn" role="tab" onclick="switchTab('valuation',this)">估值详情</button>
+      <button class="tab-btn" role="tab" onclick="switchTab('history',this)">历史走势</button>
+      <button class="tab-btn" role="tab" onclick="switchTab('peers',this)">同行对比</button>
+      <button class="tab-btn" role="tab" onclick="switchTab('risk',this)">风险分析</button>
+    </div>
+
+    <!-- ── Tab: Overview ─────────────────────────── -->
+    <div id="tab-overview" class="tab-pane active">
+      <div class="card-grid-3">
+        <!-- Ticker info -->
+        <div class="card">
+          <div class="card-title">股票信息</div>
+          <div id="ticker-info-rows"></div>
+        </div>
+        <!-- Verdict summary -->
+        <div class="card">
+          <div class="card-title">估值摘要</div>
+          <div id="verdict-summary-rows"></div>
+        </div>
+        <!-- One-line verdict -->
+        <div class="card">
+          <div class="card-title">结论</div>
+          <div id="overview-one-liner" style="font-size:14px;color:var(--text);line-height:1.7">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Tab: Valuation ────────────────────────── -->
+    <div id="tab-valuation" class="tab-pane">
+
+      <!-- Method breakdown -->
+      <h3 class="section-title">估值方法拆解</h3>
+      <div class="table-wrap" id="method-table-wrap">
+        <div class="empty-state">加载中…</div>
+      </div>
+
+      <!-- Scenario matrix -->
+      <h3 class="section-title">情景矩阵</h3>
+      <div class="scenario-grid" id="scenario-grid"></div>
+
+      <!-- Operation zones -->
+      <h3 class="section-title" id="zones-title" style="display:none">操作区间</h3>
+      <div id="operation-zones-wrap"></div>
+
+      <!-- Analysis sections -->
+      <h3 class="section-title">分析详情</h3>
+      <div id="sections-wrap"></div>
+
+    </div>
+
+    <!-- ── Tab: History ──────────────────────────── -->
+    <div id="tab-history" class="tab-pane">
+      <div class="chart-container">
+        <div class="chart-legend">
+          <div class="legend-item"><div class="legend-line price"></div> 收盘价</div>
+          <div class="legend-item"><div class="legend-line fv"></div> 公允价值</div>
+        </div>
+        <div class="chart-svg-wrap" style="position:relative">
+          <div id="chart-wrap"><div class="empty-state">切换到历史 Tab 后加载…</div></div>
+          <div id="chart-tooltip" class="chart-tooltip"></div>
+        </div>
+        <div id="chart-note" class="chart-note"></div>
+      </div>
+    </div>
+
+    <!-- ── Tab: Peers ────────────────────────────── -->
+    <div id="tab-peers" class="tab-pane">
+      <div id="peers-meta" class="peers-meta"></div>
+      <div class="table-wrap" id="peers-table-wrap">
+        <div class="empty-state">切换到同行 Tab 后加载…</div>
+      </div>
+    </div>
+
+    <!-- ── Tab: Risk ─────────────────────────────── -->
+    <div id="tab-risk" class="tab-pane">
+      <div class="table-wrap" id="risk-table-wrap">
+        <div class="empty-state">加载中…</div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+
+</div><!-- /app -->
+
+  <script src="/assets/platform-client.js?v=20260403-platformfix"></script>
+<script src="/assets/cn-stock-detail.js?v=20260403-platform"></script>
+</body>
+</html>

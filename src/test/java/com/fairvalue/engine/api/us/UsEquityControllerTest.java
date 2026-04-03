@@ -145,7 +145,16 @@ class UsEquityControllerTest {
                 .andExpect(jsonPath("$.valuation_methods.length()").value(org.hamcrest.Matchers.greaterThanOrEqualTo(3)))
                 .andExpect(jsonPath("$.method_outputs.length()").value(org.hamcrest.Matchers.greaterThanOrEqualTo(3)))
                 .andExpect(jsonPath("$.scenario_matrix.length()").value(3))
-                .andExpect(jsonPath("$.risk_matrix.length()").value(org.hamcrest.Matchers.greaterThanOrEqualTo(3)));
+                .andExpect(jsonPath("$.risk_matrix.length()").value(org.hamcrest.Matchers.greaterThanOrEqualTo(3)))
+                .andExpect(jsonPath("$.decision.source_attribution.erp_source").isNotEmpty());
+    }
+
+    @Test
+    void shouldRunUsValuationWithDefaultRequestWhenBodyIsMissing() throws Exception {
+        mockMvc.perform(post("/v1/us-equities/AAPL/valuation/run"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ticker").value("AAPL"))
+                .andExpect(jsonPath("$.summary.fair_value_range.mid").exists());
     }
 
     @Test
@@ -261,6 +270,35 @@ class UsEquityControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.one_line_verdict").exists())
                 .andExpect(jsonPath("$.valuation_breakdown.length()").value(org.hamcrest.Matchers.greaterThanOrEqualTo(3)));
+    }
+
+    @Test
+    void peersEndpointShouldNotCreateValuationRuns() throws Exception {
+        Long before = jdbcClient.sql("""
+                        SELECT COUNT(*)
+                        FROM fairvalue.valuation_runs
+                        WHERE security_id = :securityId
+                        """)
+                .param("securityId", aaplSecurityId)
+                .query(Long.class)
+                .single();
+
+        mockMvc.perform(get("/v1/peers/US/AAPL")
+                        .param("limit", "3"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.market").value("US"))
+                .andExpect(jsonPath("$.source_mode").exists());
+
+        Long after = jdbcClient.sql("""
+                        SELECT COUNT(*)
+                        FROM fairvalue.valuation_runs
+                        WHERE security_id = :securityId
+                        """)
+                .param("securityId", aaplSecurityId)
+                .query(Long.class)
+                .single();
+
+        assertThat(after).isEqualTo(before);
     }
 
     private void insertMarketHistory(LocalDate tradeDate, double close, double pe) {

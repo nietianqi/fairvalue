@@ -3,8 +3,13 @@ package com.fairvalue.engine.api.us;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fairvalue.engine.us.UsCompanyIrClient;
+import com.fairvalue.engine.us.UsDamodaranClient;
+import com.fairvalue.engine.us.UsFredClient;
+import com.fairvalue.engine.us.UsEquityValuationService;
+import com.fairvalue.engine.us.UsLongbridgeClient;
 import com.fairvalue.engine.us.UsSecClient;
 import com.fairvalue.engine.us.UsSecurityMasterService;
+import com.fairvalue.engine.us.UsSimfinClient;
 import com.fairvalue.engine.us.UsStooqClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,7 +21,12 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Optional;
+import java.time.LocalDate;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -25,7 +35,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(properties = {
         "market-data.us.live.enabled=true",
-        "market-data.us.live.universe-sync-on-startup=false"
+        "market-data.us.live.universe-sync-on-startup=false",
+        "app.valuation.us.schedule.max-retries=2",
+        "market-data.us.fred.enabled=true",
+        "market-data.us.fred.api-key=test-fred-key",
+        "market-data.us.simfin.enabled=true",
+        "market-data.us.simfin.api-key=test-simfin-key",
+        "market-data.us.damodaran.enabled=true"
 })
 @AutoConfigureMockMvc
 class UsEquityAdminControllerTest {
@@ -50,12 +66,81 @@ class UsEquityAdminControllerTest {
     @MockBean
     private UsStooqClient usStooqClient;
 
+    @MockBean
+    private UsFredClient usFredClient;
+
+    @MockBean
+    private UsLongbridgeClient usLongbridgeClient;
+
+    @MockBean
+    private UsDamodaranClient usDamodaranClient;
+
+    @MockBean
+    private UsSimfinClient usSimfinClient;
+
+    @MockBean
+    private UsEquityValuationService usEquityValuationService;
+
     private long aaplSecurityId;
 
     @BeforeEach
     void setUp() {
         aaplSecurityId = usSecurityMasterService.resolveSecurityId("AAPL").orElseThrow();
+        jdbcClient.sql("DELETE FROM fairvalue.valuation_jobs")
+                .update();
         jdbcClient.sql("DELETE FROM fairvalue.financial_standardized WHERE security_id = :securityId")
+                .param("securityId", aaplSecurityId)
+                .update();
+        jdbcClient.sql("DELETE FROM fairvalue.valuation_latest_snapshot WHERE security_id = :securityId")
+                .param("securityId", aaplSecurityId)
+                .update();
+        jdbcClient.sql("""
+                        DELETE FROM fairvalue.report_blocks
+                        WHERE valuation_run_id IN (
+                            SELECT id
+                            FROM fairvalue.valuation_runs
+                            WHERE security_id = :securityId
+                        )
+                        """)
+                .param("securityId", aaplSecurityId)
+                .update();
+        jdbcClient.sql("""
+                        DELETE FROM fairvalue.risk_scores
+                        WHERE valuation_run_id IN (
+                            SELECT id
+                            FROM fairvalue.valuation_runs
+                            WHERE security_id = :securityId
+                        )
+                        """)
+                .param("securityId", aaplSecurityId)
+                .update();
+        jdbcClient.sql("""
+                        DELETE FROM fairvalue.reverse_dcf_results
+                        WHERE valuation_run_id IN (
+                            SELECT id
+                            FROM fairvalue.valuation_runs
+                            WHERE security_id = :securityId
+                        )
+                        """)
+                .param("securityId", aaplSecurityId)
+                .update();
+        jdbcClient.sql("""
+                        DELETE FROM fairvalue.scenario_results
+                        WHERE valuation_run_id IN (
+                            SELECT id
+                            FROM fairvalue.valuation_runs
+                            WHERE security_id = :securityId
+                        )
+                        """)
+                .param("securityId", aaplSecurityId)
+                .update();
+        jdbcClient.sql("""
+                        DELETE FROM fairvalue.valuation_method_results
+                        WHERE security_id = :securityId
+                        """)
+                .param("securityId", aaplSecurityId)
+                .update();
+        jdbcClient.sql("DELETE FROM fairvalue.valuation_runs WHERE security_id = :securityId")
                 .param("securityId", aaplSecurityId)
                 .update();
         jdbcClient.sql("DELETE FROM fairvalue.financial_derived_metrics WHERE security_id = :securityId")
@@ -263,6 +348,319 @@ class UsEquityAdminControllerTest {
                 .andExpect(jsonPath("$.market_price_daily_count").value(1))
                 .andExpect(jsonPath("$.market_snapshot_count").value(1))
                 .andExpect(jsonPath("$.market_intraday_snapshot_count").value(1));
+    }
+
+    @Test
+    void shouldBackfillTop50Snapshots() throws Exception {
+        when(usEquityValuationService.runValuation(any(), any())).thenAnswer(invocation -> {
+            String ticker = invocation.getArgument(0, String.class);
+            return new com.fairvalue.engine.api.dto.us.UsValuationRunResponse(
+                    ticker,
+                    java.util.List.of("dcf"),
+                    java.util.List.of(),
+                    java.util.List.of(),
+                    100.0,
+                    new com.fairvalue.engine.api.dto.us.UsFairValueRange(90.0, 100.0, 110.0),
+                    0.8,
+                    0.1,
+                    "balanced",
+                    java.util.List.of(),
+                    java.util.Map.of(),
+                    null,
+                    null,
+                    null
+            );
+        });
+
+        mockMvc.perform(post("/v1/us-equities-admin/snapshot-backfill/top50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.list_name").value("top50_cross_industry_v1"))
+                .andExpect(jsonPath("$.requested_count").value(50))
+                .andExpect(jsonPath("$.items.length()").value(50))
+                .andExpect(jsonPath("$.completed_count").value(org.hamcrest.Matchers.greaterThan(0)));
+
+        verify(usEquityValuationService).runValuation(eq("AAPL"), any());
+    }
+
+    @Test
+    void shouldReturnExternalSourceStatus() throws Exception {
+        when(usFredClient.fetchRiskFreeRate()).thenReturn(Optional.of(
+                new UsFredClient.FredSeriesObservation("DGS10", LocalDate.of(2026, 3, 31), 0.043, "fred_api")
+        ));
+        when(usFredClient.fetchPolicyRate()).thenReturn(Optional.of(
+                new UsFredClient.FredSeriesObservation("FEDFUNDS", LocalDate.of(2026, 3, 31), 0.045, "fred_api")
+        ));
+        when(usDamodaranClient.fetchErpSnapshot()).thenReturn(Optional.of(
+                new UsDamodaranClient.DamodaranErpSnapshot(LocalDate.of(2026, 3, 1), 0.043, 0.051, "damodaran_histimpl")
+        ));
+        when(usSimfinClient.probe()).thenReturn(new UsSimfinClient.SimfinStatus(
+                true,
+                true,
+                false,
+                "unauthenticated",
+                "Invalid API Key - check the key again and also if you confirmed your e-mail on registration"
+        ));
+        when(usSimfinClient.fetchCompanyRecord("AAPL")).thenReturn(Optional.of(
+                new UsSimfinClient.SimfinCompanyRecord(
+                        "AAPL",
+                        "111",
+                        "Apple Inc.",
+                        "101",
+                        "US",
+                        "SimFin sample",
+                        "September",
+                        "161000",
+                        "0000320193",
+                        "USD"
+                )
+        ));
+
+        mockMvc.perform(get("/v1/us-equities-admin/AAPL/source-status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.as_of").exists())
+                .andExpect(jsonPath("$.ticker").value("AAPL"))
+                .andExpect(jsonPath("$.fred.status").value("ok"))
+                .andExpect(jsonPath("$.fred.risk_free_observation.source_label").value("fred_api"))
+                .andExpect(jsonPath("$.longbridge.status").exists())
+                .andExpect(jsonPath("$.damodaran.status").value("ok"))
+                .andExpect(jsonPath("$.simfin.status").value("unauthenticated"))
+                .andExpect(jsonPath("$.simfin.dataset_url").doesNotExist())
+                .andExpect(jsonPath("$.simfin.company_record.company_name").value("Apple Inc."));
+    }
+
+    @Test
+    void shouldReturnValuationJobSummaryAndTickerJobs() throws Exception {
+        jdbcClient.sql("""
+                        INSERT INTO fairvalue.valuation_jobs (
+                            job_type,
+                            security_id,
+                            status,
+                            retry_count,
+                            payload_json,
+                            created_at,
+                            started_at,
+                            finished_at
+                        ) VALUES
+                        ('us_scheduled_valuation_refresh', :securityId, 'completed', 0, '{"ticker":"AAPL"}'::jsonb, NOW(), NOW(), NOW()),
+                        ('us_scheduled_valuation_refresh', :securityId, 'failed', 1, '{"ticker":"AAPL"}'::jsonb, NOW(), NOW(), NOW())
+                        """)
+                .param("securityId", aaplSecurityId)
+                .update();
+
+        mockMvc.perform(get("/v1/us-equities-admin/valuation-jobs/summary"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.completed_count").value(1))
+                .andExpect(jsonPath("$.failed_count").value(1))
+                .andExpect(jsonPath("$.retryable_count").value(1))
+                .andExpect(jsonPath("$.repeated_failed_count").value(0))
+                .andExpect(jsonPath("$.dead_letter_count").value(0));
+
+        mockMvc.perform(get("/v1/us-equities-admin/AAPL/valuation-jobs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].ticker").value("AAPL"))
+                .andExpect(jsonPath("$[0].job_type").value("us_scheduled_valuation_refresh"));
+
+        mockMvc.perform(get("/v1/us-equities-admin/AAPL/overview"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valuation_job_count").value(2))
+                .andExpect(jsonPath("$.latest_valuation_jobs").isArray());
+    }
+
+    @Test
+    void shouldRetryFailedJobsFromAdminEndpoint() throws Exception {
+        Long valuationRunId = jdbcClient.sql("""
+                        INSERT INTO fairvalue.valuation_runs (
+                            security_id,
+                            valuation_date,
+                            run_mode,
+                            current_price,
+                            fair_value_low,
+                            fair_value_mid,
+                            fair_value_high,
+                            blended_intrinsic_value,
+                            confidence_level,
+                            margin_of_safety,
+                            weighted_value,
+                            final_verdict,
+                            report_json
+                        ) VALUES (
+                            :securityId,
+                            NOW(),
+                            'manual',
+                            190.0,
+                            180.0,
+                            200.0,
+                            220.0,
+                            200.0,
+                            0.8,
+                            0.1,
+                            200.0,
+                            'UNDERVALUED',
+                            '{}'::jsonb
+                        )
+                        RETURNING id
+                        """)
+                .param("securityId", aaplSecurityId)
+                .query(Long.class)
+                .single();
+
+        jdbcClient.sql("""
+                        INSERT INTO fairvalue.valuation_latest_snapshot (
+                            security_id,
+                            market,
+                            latest_run_id,
+                            as_of_time,
+                            current_price,
+                            fair_value_low,
+                            fair_value_mid,
+                            fair_value_high,
+                            upside_pct,
+                            confidence_level,
+                            margin_of_safety,
+                            final_verdict,
+                            implied_expectation,
+                            value_trap_flag,
+                            sector_template,
+                            company_type,
+                            quality_score,
+                            data_quality_score,
+                            data_version,
+                            summary_json,
+                            report_json,
+                            source_attribution_json,
+                            updated_at
+                        ) VALUES (
+                            :securityId,
+                            'US',
+                            :runId,
+                            NOW(),
+                            190.0,
+                            180.0,
+                            200.0,
+                            220.0,
+                            0.05,
+                            0.80,
+                            0.10,
+                            'UNDERVALUED',
+                            'balanced',
+                            FALSE,
+                            'us_tech_compounder',
+                            'compounder',
+                            0.78,
+                            0.82,
+                            'test',
+                            '{}'::jsonb,
+                            '{}'::jsonb,
+                            '{}'::jsonb,
+                            NOW()
+                        )
+                        """)
+                .param("securityId", aaplSecurityId)
+                .param("runId", valuationRunId)
+                .update();
+
+        jdbcClient.sql("""
+                        INSERT INTO fairvalue.valuation_jobs (
+                            job_type,
+                            security_id,
+                            status,
+                            retry_count,
+                            payload_json,
+                            created_at,
+                            started_at,
+                            finished_at
+                        ) VALUES (
+                            'us_scheduled_valuation_refresh',
+                            :securityId,
+                            'failed',
+                            0,
+                            '{"ticker":"AAPL","trigger":"scheduled_cycle"}'::jsonb,
+                            NOW(),
+                            NOW(),
+                            NOW()
+                        )
+                        """)
+                .param("securityId", aaplSecurityId)
+                .update();
+
+        doAnswer(invocation -> null).when(usEquityValuationService).runScheduledValuation("AAPL");
+
+        mockMvc.perform(post("/v1/us-equities-admin/AAPL/valuation-jobs/retry-failed"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].ticker").value("AAPL"))
+                .andExpect(jsonPath("$[0].status").value("completed"))
+                .andExpect(jsonPath("$[0].valuation_run_id").value(valuationRunId));
+    }
+
+    @Test
+    void shouldRecoverStaleJobsFromAdminEndpoint() throws Exception {
+        jdbcClient.sql("""
+                        INSERT INTO fairvalue.valuation_jobs (
+                            job_type,
+                            security_id,
+                            status,
+                            retry_count,
+                            payload_json,
+                            created_at,
+                            started_at
+                        ) VALUES (
+                            'us_scheduled_valuation_refresh',
+                            :securityId,
+                            'running',
+                            0,
+                            '{"ticker":"AAPL","trigger":"scheduled_cycle"}'::jsonb,
+                            NOW() - INTERVAL '2 hours',
+                            NOW() - INTERVAL '2 hours'
+                        )
+                        """)
+                .param("securityId", aaplSecurityId)
+                .update();
+
+        mockMvc.perform(post("/v1/us-equities-admin/valuation-jobs/recover-stale"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].ticker").value("AAPL"))
+                .andExpect(jsonPath("$[0].status").value("queued"))
+                .andExpect(jsonPath("$[0].priority").value(260))
+                .andExpect(jsonPath("$[0].error_message").value("stale_running_timeout"));
+    }
+
+    @Test
+    void shouldExposeRankingCoverageAndDeadLetterViews() throws Exception {
+        jdbcClient.sql("""
+                        INSERT INTO fairvalue.valuation_jobs (
+                            job_type,
+                            security_id,
+                            status,
+                            retry_count,
+                            error_message,
+                            payload_json,
+                            created_at,
+                            finished_at
+                        ) VALUES (
+                            'us_scheduled_valuation_refresh',
+                            :securityId,
+                            'dead_letter',
+                            2,
+                            'exhausted retries',
+                            '{"ticker":"AAPL"}'::jsonb,
+                            NOW(),
+                            NOW()
+                        )
+                        """)
+                .param("securityId", aaplSecurityId)
+                .update();
+
+        mockMvc.perform(get("/v1/us-equities-admin/ranking-coverage"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ranking_mode").exists())
+                .andExpect(jsonPath("$.strict_ready").exists())
+                .andExpect(jsonPath("$.snapshot_coverage").exists())
+                .andExpect(jsonPath("$.rankable_count").exists());
+
+        mockMvc.perform(get("/v1/us-equities-admin/valuation-jobs/dead-letter"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].ticker").value("AAPL"))
+                .andExpect(jsonPath("$[0].status").value("dead_letter"));
     }
 
     private void insertQuarterDocument(

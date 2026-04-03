@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>股票筛选器_股票筛选查询工具 — Fairvalue Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/valuation-screener.css?v=20260402c" />
+</head>
+<body>
+
+  <!-- ── Site header ─────────────────────────── -->
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="header-brand">
+        <span class="brand-logo">📊</span>
+        <span class="brand-name">Fairvalue Lab</span>
+      </div>
+      <nav class="header-nav">
+        <a href="/cn-undervalued-stocks.html">全球榜单</a>
+        <a href="/valuation-screener.html" class="is-active">筛选器</a>
+        <a href="/us-equities-admin.html">Admin</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ── Page title bar ──────────────────────── -->
+  <div class="page-title-bar">
+    <div class="title-inner">
+      <h1 class="page-title">
+        股票筛选器_股票筛选查询工具
+        <span class="title-info" title="基于内部估值模型的多因子筛选工具，支持 US / CN / JP / HK 市场">ℹ</span>
+      </h1>
+      <div class="title-actions">
+        <a class="btn-text-link" href="/us-stock-detail.html?ticker=AAPL">查看估值示例</a>
+        <button class="btn-outline" id="saveBtn">保存</button>
+        <button class="btn-primary" id="applyBtn">运行筛选</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Strategy chips carousel ─────────────── -->
+  <div class="strategies-wrap">
+    <div class="strategies-scroll" id="strategiesScroll">
+      <!-- injected by JS -->
+    </div>
+    <button class="see-more-btn" id="seeMoreBtn">查看超20种筛选策略 ›</button>
+  </div>
+
+  <!-- ── Screener body ────────────────────────── -->
+  <div class="screener-body">
+
+    <!-- Filter section -->
+    <div class="filter-section">
+
+      <!-- Top filter row -->
+      <div class="filter-top-row">
+        <span class="filter-label">筛选</span>
+        <button class="applied-pill" id="appliedPill" style="display:none">
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true">
+            <path d="M1.5 5.5l2.5 2.5 5-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          已应用筛选条件 <span id="appliedCount">0</span>
+        </button>
+        <button class="reset-all-btn" id="resetAllBtn">全部重置</button>
+        <div class="filter-search-wrap">
+          <svg class="search-icon-svg" width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+            <circle cx="5.5" cy="5.5" r="4" stroke="#9ca3af" stroke-width="1.5"/>
+            <path d="M9 9l2 2" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <input type="text" class="filter-search-input" placeholder="搜索超150种指标......" readonly />
+        </div>
+      </div>
+
+      <!-- Category tabs -->
+      <div class="filter-cats-row">
+        <div class="filter-cats" id="filterCats">
+          <!-- injected by JS -->
+        </div>
+      </div>
+
+      <!-- Expandable filter panel -->
+      <div class="filter-panel-wrap" id="filterPanelWrap" style="display:none">
+        <div class="filter-panel" id="filterPanel">
+          <!-- injected by JS -->
+        </div>
+        <div class="filter-panel-footer">
+          <button class="btn-cancel-filter" id="cancelFilterBtn">取消</button>
+          <button class="btn-apply-filter" id="applyFilterBtn">应用</button>
+        </div>
+      </div>
+
+      <!-- Active filter chips -->
+      <div class="active-chips-row" id="activeChipsRow" style="display:none">
+        <div class="active-chips" id="activeChips">
+          <!-- injected by JS -->
+        </div>
+      </div>
+
+    </div><!-- /filter-section -->
+
+    <!-- Results section -->
+    <div class="results-section">
+
+      <!-- Toolbar: market tabs + view tabs + download -->
+      <div class="results-toolbar">
+        <div class="market-tabs" id="marketTabs">
+          <!-- injected by JS -->
+        </div>
+        <div class="view-tabs" id="viewTabs">
+          <!-- injected by JS -->
+        </div>
+        <button class="dl-btn" id="dlBtn" title="导出 CSV">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+            <path d="M7.5 2v7M4.5 6.5l3 3 3-3M2 13h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Table -->
+      <div class="table-container" id="tableContainer">
+        <div class="placeholder-state">
+          <div class="loading-ring"></div>
+          <span>正在加载...</span>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="results-footer" id="resultsFooter" style="display:none">
+        <span id="footerCount">—</span>
+        <span id="footerTime" class="footer-time"></span>
+      </div>
+
+    </div><!-- /results-section -->
+
+  </div><!-- /screener-body -->
+
+  <script src="/assets/valuation-screener.js?v=20260403c" defer></script>
+</body>
+</html>

@@ -11,6 +11,7 @@ public class UsDamodaranProperties {
     private String betaUrl = "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/Betas.html";
     private String peUrl = "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/pedata.html";
     private String evEbitdaUrl = "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/vebitda.html";
+    private double fallbackErp = 0.0472;
     private int cacheTtlSeconds = 43200;
     private long requestTimeoutSeconds = 20;
 
@@ -52,6 +53,14 @@ public class UsDamodaranProperties {
 
     public void setEvEbitdaUrl(String evEbitdaUrl) {
         this.evEbitdaUrl = evEbitdaUrl;
+    }
+
+    public double getFallbackErp() {
+        return fallbackErp;
+    }
+
+    public void setFallbackErp(double fallbackErp) {
+        this.fallbackErp = fallbackErp;
     }
 
     public int getCacheTtlSeconds() {
