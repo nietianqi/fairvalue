@@ -362,6 +362,23 @@ public class ValuationLatestSnapshotRepository {
                 .orElse(LocalDate.now());
     }
 
+    public long countQualifiedRankings(String market) {
+        Long count = jdbcClient.sql("""
+                        SELECT COUNT(*)
+                        FROM fairvalue.valuation_latest_snapshot vls
+                        WHERE vls.market = :market
+                          AND COALESCE(vls.rankable, FALSE) = TRUE
+                          AND COALESCE(vls.price_source_type, 'research_fallback') != 'research_fallback'
+                          AND vls.current_price IS NOT NULL AND vls.current_price > 1.0
+                          AND vls.fair_value_mid IS NOT NULL AND vls.fair_value_mid > 0
+                          AND vls.confidence_level >= 0.20
+                        """)
+                .param("market", market)
+                .query(Long.class)
+                .single();
+        return count == null ? 0L : count;
+    }
+
     public List<MarketRankingItem> findRankings(String market, boolean ascending, int limit, int offset) {
         String order = ascending ? "ASC" : "DESC";
         return jdbcClient.sql("""
@@ -405,6 +422,11 @@ public class ValuationLatestSnapshotRepository {
                         LEFT JOIN latest_intraday li
                           ON li.security_id = vls.security_id
                         WHERE vls.market = :market
+                          AND COALESCE(vls.rankable, FALSE) = TRUE
+                          AND COALESCE(vls.price_source_type, 'research_fallback') != 'research_fallback'
+                          AND vls.current_price IS NOT NULL AND vls.current_price > 1.0
+                          AND vls.fair_value_mid IS NOT NULL AND vls.fair_value_mid > 0
+                          AND vls.confidence_level >= 0.20
                         ORDER BY vls.upside_pct __ORDER__, sm.ticker
                         LIMIT :limit OFFSET :offset
                         """.replace("__ORDER__", order))

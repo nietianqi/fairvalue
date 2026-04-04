@@ -1570,7 +1570,9 @@ public class UsEquityValuationService {
                 ? null
                 : Math.toIntExact(Math.max(0L, ChronoUnit.DAYS.between(priceAsOf, LocalDate.now())));
         boolean isTradable = "tradable".equals(sourceType) || "market_data".equals(sourceType);
-        boolean rankable = devRankableOverride || (isTradable && (freshnessDays == null || freshnessDays <= 3));
+        // devRankableOverride relaxes freshness check only — price source must still be tradable/market_data.
+        // research_fallback stocks (no real price) are never rankable, even in dev.
+        boolean rankable = isTradable && (devRankableOverride || freshnessDays == null || freshnessDays <= 3);
         String valuationStatus = "ACTIVE";
         String exclusionReason = null;
         if (!isTradable) {

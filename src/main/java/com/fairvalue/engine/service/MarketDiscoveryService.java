@@ -21,6 +21,7 @@ import com.fairvalue.engine.us.UsFinancialDerivedMetricRecord;
 import com.fairvalue.engine.us.UsMarketSnapshotRecord;
 import com.fairvalue.engine.us.UsRankingCoverageMetrics;
 import com.fairvalue.engine.us.UsRelativePeerComparable;
+import com.fairvalue.engine.us.UsPeerUniverseRulesService;
 import com.fairvalue.engine.us.UsSecurityMaster;
 import com.fairvalue.engine.us.UsSecurityMasterService;
 import com.fairvalue.engine.us.UsStoredValuationSnapshotRecord;
@@ -47,14 +48,13 @@ public class MarketDiscoveryService {
     private static final String US_SNAPSHOT_PEER_SOURCE = "market_data_service+valuation_latest_snapshot";
     private static final List<String> DEFAULT_US_PEER_FILTER_METRICS =
             List.of("market_cap", "revenue_growth", "fcf_margin", "roic", "usable_multiple");
-    private static final List<String> MANAGED_CARE_FALLBACK_TICKERS =
-            List.of("ELV", "HUM", "CI", "CNC", "MOH", "CVS");
 
     private final CnStockValuationService cnStockValuationService;
     private final MarketDataService marketDataService;
     private final ValuationService valuationService;
     private final UsEquityValuationService usEquityValuationService;
     private final UsConfiguredValuationModelsService usConfiguredValuationModelsService;
+    private final UsPeerUniverseRulesService usPeerUniverseRulesService;
     private final UsSecurityMasterService usSecurityMasterService;
     private final ValuationLatestSnapshotRepository valuationLatestSnapshotRepository;
     private final MarketSnapshotRepository marketSnapshotRepository;
@@ -76,6 +76,7 @@ public class MarketDiscoveryService {
             ValuationService valuationService,
             UsEquityValuationService usEquityValuationService,
             UsConfiguredValuationModelsService usConfiguredValuationModelsService,
+            UsPeerUniverseRulesService usPeerUniverseRulesService,
             UsSecurityMasterService usSecurityMasterService,
             ValuationLatestSnapshotRepository valuationLatestSnapshotRepository,
             MarketSnapshotRepository marketSnapshotRepository,
@@ -86,6 +87,7 @@ public class MarketDiscoveryService {
         this.valuationService = valuationService;
         this.usEquityValuationService = usEquityValuationService;
         this.usConfiguredValuationModelsService = usConfiguredValuationModelsService;
+        this.usPeerUniverseRulesService = usPeerUniverseRulesService;
         this.usSecurityMasterService = usSecurityMasterService;
         this.valuationLatestSnapshotRepository = valuationLatestSnapshotRepository;
         this.marketSnapshotRepository = marketSnapshotRepository;
@@ -184,7 +186,8 @@ public class MarketDiscoveryService {
             }
 
             boolean ascending = "overvalued".equals(resolvedRankingType);
-            List<MarketRankingItem> pageScopedItems = coverage.snapshotCount() > 0
+            long qualifiedCount = valuationLatestSnapshotRepository.countQualifiedRankings(Market.US.name());
+            List<MarketRankingItem> pageScopedItems = qualifiedCount > 0
                     ? valuationLatestSnapshotRepository.findRankings(
                             Market.US.name(),
                             ascending,
@@ -196,7 +199,7 @@ public class MarketDiscoveryService {
                 resolvedRankingType,
                 resolvedPage,
                 resolvedSize,
-                coverage.snapshotCount(),
+                qualifiedCount,
                 "us_latest_snapshot_page_scoped_ranking",
                 generatedAt,
                 coverage.snapshotCount() > 0 ? valuationLatestSnapshotRepository.latestDataAsOf(Market.US.name()) : dataAsOf,
@@ -645,13 +648,23 @@ public class MarketDiscoveryService {
             Integer peerCandidateCount = selection.candidateCount();
             String ruleVersion = selection.ruleVersion();
             String filterSummary = selection.filterSummary();
+            Map<String, UsRelativePeerComparable> selectedComparableMap = selection.peers().stream()
+                    .collect(Collectors.toMap(
+                            peer -> peer.ticker().toUpperCase(Locale.ROOT),
+                            Function.identity(),
+                            (left, right) -> left,
+                            LinkedHashMap::new
+                    ));
 
             List<MarketPeerItem> items = peerTickers.stream()
                     .limit(limit)
                     .map(peerTicker -> toUsPeerItem(
                             peerTicker,
                             security,
-                            candidateMap.get(peerTicker.toUpperCase(Locale.ROOT)),
+                            selectedComparableMap.getOrDefault(
+                                    peerTicker.toUpperCase(Locale.ROOT),
+                                    candidateMap.get(peerTicker.toUpperCase(Locale.ROOT))
+                            ),
                             storedSnapshotMap.get(peerTicker.toUpperCase(Locale.ROOT))
                     ))
                     .toList();
@@ -757,10 +770,11 @@ public class MarketDiscoveryService {
     }
 
     private List<StockSnapshot> managedCareFallbackUniverse(StockSnapshot target, UsSecurityMaster targetSecurity) {
-        if (!isManagedCare(targetSecurity, target)) {
+        List<String> fallbackTickers = usPeerUniverseRulesService.preferredFallbackTickers(targetSecurity);
+        if (fallbackTickers.isEmpty()) {
             return List.of();
         }
-        return MANAGED_CARE_FALLBACK_TICKERS.stream()
+        return fallbackTickers.stream()
                 .filter(candidate -> !candidate.equalsIgnoreCase(target.symbol()))
                 .map(candidate -> marketDataService.getSnapshot(Market.US, candidate))
                 .filter(Objects::nonNull)
