@@ -1,6 +1,7 @@
 package com.fairvalue.engine.us;
 
 import java.time.Instant;
+import java.time.LocalDate;
 
 public record UsValuationLatestSnapshotRecord(
         long securityId,
@@ -22,8 +23,75 @@ public record UsValuationLatestSnapshotRecord(
         Double qualityScore,
         Double dataQualityScore,
         String dataVersion,
+        LocalDate priceAsOf,
+        Integer priceFreshnessDays,
+        String priceSourceType,
+        boolean rankable,
+        String valuationStatus,
+        String exclusionReason,
+        String industryMatchSource,
+        Double industryMatchConfidence,
+        boolean industryFallbackUsed,
         String summaryJson,
         String reportJson,
         String sourceAttributionJson
 ) {
+    public UsValuationLatestSnapshotRecord(
+            long securityId,
+            String market,
+            Long latestRunId,
+            Instant asOfTime,
+            double currentPrice,
+            double fairValueLow,
+            double fairValueMid,
+            double fairValueHigh,
+            double upsidePct,
+            double confidenceLevel,
+            double marginOfSafety,
+            String finalVerdict,
+            String impliedExpectation,
+            boolean valueTrapFlag,
+            String sectorTemplate,
+            String companyType,
+            double qualityScore,
+            double dataQualityScore,
+            String dataVersion,
+            String summaryJson,
+            String reportJson,
+            String sourceAttributionJson
+    ) {
+        this(
+                securityId,
+                market,
+                latestRunId == null ? 0L : latestRunId,
+                asOfTime,
+                currentPrice,
+                fairValueLow,
+                fairValueMid,
+                fairValueHigh,
+                upsidePct,
+                confidenceLevel,
+                marginOfSafety,
+                finalVerdict,
+                impliedExpectation,
+                valueTrapFlag,
+                sectorTemplate,
+                companyType,
+                qualityScore,
+                dataQualityScore,
+                dataVersion,
+                null,
+                null,
+                null,
+                true,
+                "ACTIVE",
+                null,
+                null,
+                null,
+                false,
+                summaryJson,
+                reportJson,
+                sourceAttributionJson
+        );
+    }
 }

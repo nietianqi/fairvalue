@@ -1,9 +1,9 @@
 ﻿# US Equity Agent Task List
 
-更新日期：2026-04-03  
-当前分支：`codex/java-backend-foundation`  
-上一稳定提交：`09b7504`  
-当前状态说明：本文件反映仓库当前美股代码基线；`Longbridge` 已完成 `AAPL / MSFT / NVDA` 新一轮真实 live 验证，`FRED` 与 `SimFin` 现已通过本地安全配置完成 live 接入，`source-status` 已升级成四源统一安全 envelope，`US history` 也已改为优先读取真实持久化历史并返回 `valuation_run_date`；`rankings / peers` 的产品 API 已收口，`US peers GET` 误触发完整 `runValuation()` 的 P0 问题已修复；当前 `US discovery / rankings` 已切到 `security_master` 全量 universe 分页，最近一次真实 `SEC universe sync` 后 live `US active securities = 8072`，但 `US rankings` 仍处于 full-universe paged、page-scoped ordering 的过渡阶段；仓库中仍存在与 CN/JP/前端有关的未整理本地改动。  
+更新日期：2026-04-04
+当前分支：`codex/java-backend-foundation`
+上一稳定提交：`96396f1`
+当前状态说明：Session 9/10 已完成全部核心任务。`valuation_latest_snapshot` 已有 ~2246 条快照数据，Rankings "加载更多" 分页改为直接从 snapshot 表分页（不再遍历 security_master），US rankings 在开发环境通过 `devRankableOverride=true` 可正常展示。JP 详情页（`jp-stock-detail.html` + `jp-stock-detail.js`）已创建并接入 `/v1/jp-equities/*` canonical API；`valuation-screener.js` JP 链接已修复。`managed_care` 公司分类规则已补充，UNH 等医疗险公司使用专属 DCF 参数（`target_fcf_margin=0.06`, `wacc=0.090`）。`UsValuationDiagnosticsService` 已新增，提供 23 字段诊断视图。Auth 默认 disabled（`APP_API_AUTH_ENABLED:false`），所有 `/v1/*` 接口前端可直接访问。
 终版对齐说明：任务优先级已按 [美股估值系统_完整终版方案_v2.docx](F:/fairvalue/美股估值系统_完整终版方案_v2.docx) 和 [us-equity-final-plan-v2-alignment.md](F:/fairvalue/docs/us-equity-final-plan-v2-alignment.md) 重新理解。
 
 ## 1. 硬约束
@@ -375,53 +375,80 @@ Jackson SNAKE_CASE 不转换 Map key（只转 bean 字段名）。
 
 ---
 
-## 7. 当前最顺的下一步（总览）
+## 7. Session 9/10 完成情况（2026-04-04）
 
-**Codex 端（后端）：**
-1. `S9-A`（P0）：bootstrap 健壮性
-2. `S9-B`（P0）：Top 50 估值快照（数据任务）
-3. `S9-C`（P1）：Damodaran fallback
-4. `S9-D`（P1）：JP URL 规范化 + DTO 确认
-5. `S9-E`（P1）：HistoryPoint run_id
-6. `S9-F`（P1）：CN DTO 字段确认
-7. `US-14`：Relative Valuation peer set 行业专属规则
-8. `US-24`：valuation_jobs worker pool 升级
+### 已完成清单
 
-**Claude Code 端（前端）：**
-1. `CC-A`（P1）：`jp-stock-detail.html` + `.js`（等 S9-D 完成）
-2. `CC-C`（P1）：JP ticker 链接收口（等 CC-A 完成）
-3. `CC-US-ADMIN`（P1）：复核 `US admin` 新增的 `Top 50 Backfill / Top 100 Queue / 严格榜单覆盖率` 交互与文案
+| 任务 | 内容 | 状态 |
+|------|------|------|
+| S9-A | Bootstrap `/platform/bootstrap` 无 client 时返回空 key，不抛异常 | ✅ |
+| S9-B | Top 50 快照回填入口 `POST /v1/us-equities-admin/snapshot-backfill/top50` | ✅ |
+| S9-C | Damodaran ERP fallback 0.0472，`erp_source=damodaran_static_fallback` | ✅ |
+| S9-D | JP URL 规范化 `/v1/jp-equities`，旧路径 302 重定向 | ✅ |
+| S9-E | `HistoryPoint` 新增 `runId` + `simulated` 字段 | ✅ |
+| S9-F | CN DTO 字段确认（与前端一致：`upside`/`verdict`/`fairValue`） | ✅ |
+| S9-G | 合成 history 数据标注 `simulated=true` | ✅ |
+| CC-A | `jp-stock-detail.html` + `jp-stock-detail.js` 创建 | ✅ |
+| CC-C | `valuation-screener.js` JP 链接修复（`?code=` 参数） | ✅ |
+| S10-A | Rankings "加载更多"修复：改为 snapshot 分页，total 从 8072→2246 | ✅ |
+| S10-B | `devRankableOverride=true` 修复开发环境 US rankings 无数据问题 | ✅ |
+| S10-C | `managed_care` 公司分类规则 + V12 DB migration | ✅ |
+| S10-D | `UsValuationDiagnosticsService` 23 字段诊断视图 | ✅ |
+| S10-E | Auth 默认 disabled（`APP_API_AUTH_ENABLED:false`） | ✅ |
+
+### 当前待推进（下一批）
+
+**数据覆盖：**
+- 当前 `rankable_count ≈ 3`（仅手动触发的 NVDA/MSFT/UNH）
+- 背景 scheduler 以 `fixed-delay=30min` 持续补充
+- 可手动批量触发：`POST /v1/us-equities-admin/snapshot-backfill/universe?size=100&mode=queue`
+- 目标：`rankable_count >= 500` → `strict_ready=true` → 全市场真实排名
+
+**后续 Codex 任务：**
+- `US-14`：Relative Valuation peer set 行业专属规则（managed_care 内部 peer 与 `/v1/peers` 对齐）
+- `US-24`：valuation_jobs worker pool 升级（multi-worker / 更细告警）
+- `US-20/21`：情景引擎细化 + Explanation blocks 措辞打磨
+
+**后续 Claude Code 任务：**
+- `CC-US-ADMIN`：US Admin 覆盖率卡片文案与 `strict_ready=false` 提示优化
+- `CC-US-DETAIL`：US 详情页字段完善（`priceSourceType`、`valuationStatus` 展示）
 
 ---
 
-## 8. Session 10 补充（US strict ranking 覆盖率推进）
+## 8. 关键基础设施状态（2026-04-04）
 
-### S10-A（P1）— Universe 批量快照回填入口
+### 分页架构
 
-**已完成：**
-- `POST /v1/us-equities-admin/snapshot-backfill/universe`
-- 支持参数：
-  - `page`
-  - `size`
-  - `mode=run|queue`
-  - `priority`
+| 市场 | 当前模式 | total | 说明 |
+|------|----------|-------|------|
+| US strict | `us_latest_snapshot_strict_ranking` | rankable_count | `strictReady=true` 时启用，需覆盖率 ≥ 60% |
+| US page-scoped | `us_latest_snapshot_page_scoped_ranking` | snapshot_count (~2246) | 当前模式，从 `valuation_latest_snapshot` 直接分页 |
+| CN | `page-scoped-ranking` | discovery total | 从 live market data 分页 |
 
-**用途：**
-- 给 `valuation_latest_snapshot` 批量补覆盖率
-- 加快 `strict_ready` 从 `false` 向 `true` 推进
+### 价格质量分层
 
-**当前建议调用：**
-- `POST /v1/us-equities-admin/snapshot-backfill/universe?page=1&size=100&mode=queue&priority=220`
+| `priceSourceType` | 含义 | `rankable` |
+|---|---|---|
+| `tradable` | Longbridge live quote | ✅（freshness ≤ 3d） |
+| `market_data` | Stooq non-fallback | ✅（freshness ≤ 3d） |
+| `research_fallback` | SEC/seed 静态价格 | ❌（除非 devRankableOverride） |
 
-### S10-B（P1）— US Admin 覆盖率可视化
+### 公司分类模板（US）
 
-**已完成：**
-- `us-equities-admin.html` 新增：
-  - `Top 50 Backfill`
-  - `Top 100 Queue`
-  - `严格榜单覆盖率`
+| sectorTemplate | 适用场景 | DCF weight | WACC |
+|---|---|---|---|
+| `us_tech_compounder` | 科技高增长（AAPL/MSFT/NVDA） | 0.35 | 动态 |
+| `us_managed_care` | 医疗险（UNH/ELV/HUM/CI） | 0.20 | 0.090 |
+| `us_bank` | 银行（JPM/BAC/GS） | 特殊 | — |
+| `us_general_quality` | 通用回退 | 0.30 | 动态 |
 
-**Claude Code Review 重点：**
-- 覆盖率卡片文案是否需要更强提示
-- queue 模式是否需要二次确认
-- `strict_ready=false` 时是否需要更明确的产品提示
+### 前端页面清单
+
+| 页面 | 路径 | 状态 |
+|------|------|------|
+| 全球榜单 | `/cn-undervalued-stocks.html` | ✅ |
+| 估值筛选器 | `/valuation-screener.html` | ✅ |
+| US 详情 | `/us-stock-detail.html?ticker=AAPL` | ✅ |
+| CN 详情 | `/cn-stock-detail.html?ticker=000001.SZ` | ✅ |
+| JP 详情 | `/jp-stock-detail.html?code=7203` | ✅ 新建 |
+| US Admin | `/us-equities-admin.html` | ✅ |

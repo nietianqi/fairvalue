@@ -95,6 +95,9 @@ class UsEquityControllerTest {
         jdbcClient.sql("DELETE FROM fairvalue.valuation_runs WHERE security_id = :securityId")
                 .param("securityId", aaplSecurityId)
                 .update();
+        jdbcClient.sql("DELETE FROM fairvalue.valuation_latest_snapshot WHERE security_id = :securityId")
+                .param("securityId", aaplSecurityId)
+                .update();
         jdbcClient.sql("DELETE FROM fairvalue.market_price_daily WHERE security_id = :securityId")
                 .param("securityId", aaplSecurityId)
                 .update();
@@ -264,12 +267,94 @@ class UsEquityControllerTest {
         mockMvc.perform(get("/v1/us-equities/AAPL/valuation/summary"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.buy_zone.low").exists())
-                .andExpect(jsonPath("$.fair_value_range.mid").exists());
+                .andExpect(jsonPath("$.fair_value_range.mid").exists())
+                .andExpect(jsonPath("$.price_source_type").exists())
+                .andExpect(jsonPath("$.rankable").exists())
+                .andExpect(jsonPath("$.valuation_status").exists());
 
         mockMvc.perform(get("/v1/us-equities/AAPL/valuation/report"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.one_line_verdict").exists())
-                .andExpect(jsonPath("$.valuation_breakdown.length()").value(org.hamcrest.Matchers.greaterThanOrEqualTo(3)));
+                .andExpect(jsonPath("$.valuation_breakdown.length()").value(org.hamcrest.Matchers.greaterThanOrEqualTo(3)))
+                .andExpect(jsonPath("$.valuation_breakdown[0].method_status").exists())
+                .andExpect(jsonPath("$.valuation_breakdown[0].outlier_trimmed").exists())
+                .andExpect(jsonPath("$.valuation_breakdown[0].weight_adjusted_by_data_quality").exists())
+                .andExpect(jsonPath("$.decision.source_attribution.industry_match_source").exists())
+                .andExpect(jsonPath("$.decision.source_attribution.industry_fallback_used").exists());
+    }
+
+    @Test
+    void shouldRefreshLegacyStoredSnapshotOnSummaryRead() throws Exception {
+        jdbcClient.sql("""
+                        INSERT INTO fairvalue.valuation_latest_snapshot (
+                            security_id,
+                            market,
+                            latest_run_id,
+                            as_of_time,
+                            current_price,
+                            fair_value_low,
+                            fair_value_mid,
+                            fair_value_high,
+                            upside_pct,
+                            confidence_level,
+                            margin_of_safety,
+                            final_verdict,
+                            implied_expectation,
+                            value_trap_flag,
+                            sector_template,
+                            company_type,
+                            quality_score,
+                            data_quality_score,
+                            data_version,
+                            rankable,
+                            summary_json,
+                            report_json,
+                            source_attribution_json,
+                            updated_at
+                        ) VALUES (
+                            :securityId,
+                            'US',
+                            NULL,
+                            NOW(),
+                            100,
+                            90,
+                            110,
+                            130,
+                            0.10,
+                            0.40,
+                            0.05,
+                            'legacy',
+                            'balanced',
+                            FALSE,
+                            'us_tech_compounder',
+                            'compounder',
+                            0.80,
+                            0.80,
+                            'sec:2025-10-28',
+                            FALSE,
+                            CAST('{\"ticker\":\"AAPL\",\"fairValueRange\":{\"low\":90,\"mid\":110,\"high\":130}}' AS jsonb),
+                            CAST('{\"ticker\":\"AAPL\",\"decision\":{\"sourceAttribution\":{}}}' AS jsonb),
+                            CAST('{}' AS jsonb),
+                            NOW()
+                        )
+                        """)
+                .param("securityId", aaplSecurityId)
+                .update();
+
+        mockMvc.perform(get("/v1/us-equities/AAPL/valuation/summary"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.price_source_type").isNotEmpty())
+                .andExpect(jsonPath("$.valuation_status").isNotEmpty());
+
+        String priceSourceType = jdbcClient.sql("""
+                        SELECT price_source_type
+                        FROM fairvalue.valuation_latest_snapshot
+                        WHERE security_id = :securityId
+                        """)
+                .param("securityId", aaplSecurityId)
+                .query(String.class)
+                .single();
+        assertThat(priceSourceType).isNotBlank();
     }
 
     @Test

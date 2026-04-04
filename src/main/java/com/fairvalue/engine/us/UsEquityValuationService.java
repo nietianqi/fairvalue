@@ -29,6 +29,7 @@ import com.fairvalue.engine.valuation.ValuationResult;
 import com.fairvalue.engine.valuation.strategy.MathSupport;
 import org.springframework.stereotype.Service;
 
+import java.time.temporal.ChronoUnit;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -40,6 +41,11 @@ import java.util.Set;
 
 @Service
 public class UsEquityValuationService {
+    /** When true, all US valuations are treated as rankable regardless of price source.
+     *  For local development only — never enable in production. */
+    @org.springframework.beans.factory.annotation.Value("${app.valuation.us.dev-rankable-override:false}")
+    private boolean devRankableOverride;
+
     private final MarketDataService marketDataService;
     private final ValuationService valuationService;
     private final UsSecClient usSecClient;
@@ -322,8 +328,14 @@ public class UsEquityValuationService {
         UsSecurityMaster classified = usSecurityClassificationService.ensureClassification(ticker, snapshot, profile);
         ValuationResult base = valuationService.valuate(Market.US, ticker);
         UsConfiguredValuationResult configured = usConfiguredValuationModelsService.evaluate(snapshot, classified, effective.customAssumptions());
+        UsValuationModelContext context = configured.context();
+        UsDataQualityResponse dataQuality = dataQuality(ticker);
+        UsFinancialQualityResponse quality = financialQuality(ticker);
+        UsEquityProfileResponse profileResponse = profile(ticker);
+        PriceQualityAssessment priceQuality = assessPriceQuality(snapshot);
 
         List<UsConfiguredMethodValuation> selectedMethods = applyMethodSelection(configured.methods(), effective.forceMethods());
+        selectedMethods = applyQualityGuardrails(selectedMethods, context, dataQuality, priceQuality);
         List<UsMethodOutput> methodOutputs = selectedMethods.stream()
                 .map(method -> methodOutput(method, effective.style()))
                 .toList();
@@ -344,20 +356,20 @@ public class UsEquityValuationService {
                 0.35,
                 0.95
         ));
+        if (isLowQualityInput(dataQuality, priceQuality)) {
+            effectiveConfidence = MathSupport.round(Math.min(effectiveConfidence, 0.45));
+        }
         List<UsScenarioOutput> scenarioMatrix = scenarioMatrix(base, range, effectiveConfidence, riskMatrixResult);
 
         double rawMarginOfSafety = (range.mid() - base.price()) / Math.max(range.mid(), 0.1);
         double marginOfSafety = MathSupport.round(rawMarginOfSafety - configured.requiredMarginOfSafety());
         String impliedExpectation = configured.reverseDcfAnalysis().impliedExpectationLabel();
-        UsDataQualityResponse dataQuality = dataQuality(ticker);
-        UsFinancialQualityResponse quality = financialQuality(ticker);
-        UsEquityProfileResponse profileResponse = profile(ticker);
         Map<String, Object> dataQualityAudit = buildDataQualityAudit(dataQuality);
         Map<String, Object> businessAndMoat = buildBusinessAndMoat(profileResponse, quality);
         Map<String, Object> financialScorecard = buildFinancialScorecard(quality);
         Map<String, String> actionable = buildActionableFramework();
-        Map<String, Object> sourceAttribution = buildSourceAttribution(snapshot, selectedMethods, dataQuality);
-        String uncertainty = buildUncertaintyAndErrorSources(snapshot, dataQuality, selectedMethods);
+        Map<String, Object> sourceAttribution = buildSourceAttribution(snapshot, context, selectedMethods, dataQuality, priceQuality);
+        String uncertainty = buildUncertaintyAndErrorSources(snapshot, dataQuality, selectedMethods, priceQuality, context);
         Map<String, String> explanationBlocks = buildExplanationBlocks(
                 snapshot,
                 profileResponse,
@@ -384,7 +396,8 @@ public class UsEquityValuationService {
                 base,
                 range,
                 effectiveConfidence,
-                impliedExpectation
+                impliedExpectation,
+                priceQuality
         );
         UsValuationDecisionResponse decision = buildDecisionResponse(
                 snapshot,
@@ -456,9 +469,19 @@ public class UsEquityValuationService {
     }
 
     public UsValuationSummaryResponse summary(String ticker) {
-        return usValuationReadService.findLatestSummary(ticker)
+        String normalizedTicker = normalizeTicker(ticker);
+        UsStoredValuationSnapshotRecord stored = usValuationReadService.findLatestSnapshot(normalizedTicker).orElse(null);
+        if (shouldRefreshStoredSnapshot(normalizedTicker, stored)) {
+            return executeValuation(
+                    normalizedTicker,
+                    UsValuationRunRequest.defaults(),
+                    "api",
+                    true
+            ).run().summary();
+        }
+        return usValuationReadService.findLatestSummary(normalizedTicker)
                 .orElseGet(() -> executeValuation(
-                        ticker,
+                        normalizedTicker,
                         UsValuationRunRequest.defaults(),
                         "api",
                         true
@@ -466,9 +489,19 @@ public class UsEquityValuationService {
     }
 
     public UsValuationReportResponse report(String ticker) {
-        return usValuationReadService.findLatestReport(ticker)
+        String normalizedTicker = normalizeTicker(ticker);
+        UsStoredValuationSnapshotRecord stored = usValuationReadService.findLatestSnapshot(normalizedTicker).orElse(null);
+        if (shouldRefreshStoredSnapshot(normalizedTicker, stored)) {
+            return executeValuation(
+                    normalizedTicker,
+                    UsValuationRunRequest.defaults(),
+                    "api",
+                    true
+            ).report();
+        }
+        return usValuationReadService.findLatestReport(normalizedTicker)
                 .orElseGet(() -> executeValuation(
-                        ticker,
+                        normalizedTicker,
                         UsValuationRunRequest.defaults(),
                         "api",
                         true
@@ -488,7 +521,13 @@ public class UsEquityValuationService {
         Map<String, Object> financialScorecard = buildFinancialScorecard(quality);
         Map<String, Object> usMarketModifiers = buildMarketModifiers(snapshot, run, run.decision().sourceAttribution());
         Map<String, String> actionable = buildActionableFramework();
-        String uncertainty = buildUncertaintyAndErrorSources(snapshot, dataQuality, List.of());
+        String uncertainty = buildUncertaintyAndErrorSources(
+                snapshot,
+                dataQuality,
+                List.of(),
+                assessPriceQuality(snapshot),
+                null
+        );
 
         return new UsValuationReportResponse(
                 ticker.toUpperCase(Locale.ROOT),
@@ -548,7 +587,8 @@ public class UsEquityValuationService {
             ValuationResult base,
             UsFairValueRange range,
             double confidenceLevel,
-            String impliedExpectation
+            String impliedExpectation,
+            PriceQualityAssessment priceQuality
     ) {
         UsFairValueRange buyZone = new UsFairValueRange(
                 MathSupport.round(range.low() * 0.85),
@@ -567,9 +607,9 @@ public class UsEquityValuationService {
         );
         return new UsValuationSummaryResponse(
                 snapshot.symbol(),
-                verdict(base),
+                verdict(base, priceQuality),
                 range,
-                assessment(base),
+                assessment(base, priceQuality),
                 base.upside(),
                 confidenceLevel,
                 buyZone,
@@ -577,7 +617,13 @@ public class UsEquityValuationService {
                 avoidZone,
                 snapshot.price(),
                 snapshot.dataVersion(),
-                impliedExpectation
+                impliedExpectation,
+                priceQuality.priceAsOf(),
+                priceQuality.priceFreshnessDays(),
+                priceQuality.priceSourceType(),
+                priceQuality.rankable(),
+                priceQuality.valuationStatus(),
+                priceQuality.exclusionReason()
         );
     }
 
@@ -752,15 +798,29 @@ public class UsEquityValuationService {
 
     private Map<String, Object> buildSourceAttribution(
             StockSnapshot snapshot,
+            UsValuationModelContext context,
             List<UsConfiguredMethodValuation> selectedMethods,
-            UsDataQualityResponse dataQuality
+            UsDataQualityResponse dataQuality,
+            PriceQualityAssessment priceQuality
     ) {
         String dataVersion = firstNonBlank(snapshot.dataVersion(), "unknown");
         String priceSource = parsePriceSource(dataVersion);
         Map<String, Object> attribution = new LinkedHashMap<>();
         attribution.put("data_version", dataVersion);
         attribution.put("price_source", priceSource);
+        attribution.put("price_source_type", priceQuality.priceSourceType());
+        attribution.put("price_as_of", priceQuality.priceAsOf());
+        attribution.put("price_freshness_days", priceQuality.priceFreshnessDays());
+        attribution.put("rankable", priceQuality.rankable());
+        attribution.put("valuation_status", priceQuality.valuationStatus());
+        attribution.put("exclusion_reason", priceQuality.exclusionReason());
         attribution.put("guidance_status", dataQuality.guidanceStatus());
+        UsExternalValuationParameterService.ExternalParameterSnapshot external = context == null
+                ? null
+                : context.externalParameterSnapshot();
+        String industryMatchSource = external == null ? "template_fallback" : external.industryMatchSource();
+        Double industryMatchConfidence = external == null ? 0.0 : external.industryMatchConfidence();
+        boolean industryFallbackUsed = external == null || external.industryFallbackUsed();
 
         Map<String, String> parameterSources = new LinkedHashMap<>();
         List<String> peerSetTickers = new ArrayList<>();
@@ -876,8 +936,28 @@ public class UsEquityValuationService {
         attribution.put("peer_filter_metrics", peerFilterMetrics);
         attribution.put("effective_target_multiple_sources", effectiveTargetMultipleSources);
         attribution.put("peer_set_tickers", peerSetTickers);
+        attribution.put("industry_match_source", industryMatchSource);
+        attribution.put("industry_match_confidence", industryMatchConfidence);
+        attribution.put("industry_fallback_used", industryFallbackUsed);
+        attribution.put("industryMatchSource", industryMatchSource);
+        attribution.put("industryMatchConfidence", industryMatchConfidence);
+        attribution.put("industryFallbackUsed", industryFallbackUsed);
         attribution.put("source_attribution_version", "v2");
         return attribution;
+    }
+
+    private Map<String, Object> buildSourceAttribution(
+            StockSnapshot snapshot,
+            List<UsConfiguredMethodValuation> selectedMethods,
+            UsDataQualityResponse dataQuality
+    ) {
+        return buildSourceAttribution(
+                snapshot,
+                null,
+                selectedMethods,
+                dataQuality,
+                assessPriceQuality(snapshot)
+        );
     }
 
     private String resolveConfiguredTemplateErpSource(Map<String, String> parameterSources) {
@@ -894,13 +974,18 @@ public class UsEquityValuationService {
     private String buildUncertaintyAndErrorSources(
             StockSnapshot snapshot,
             UsDataQualityResponse dataQuality,
-            List<UsConfiguredMethodValuation> selectedMethods
+            List<UsConfiguredMethodValuation> selectedMethods,
+            PriceQualityAssessment priceQuality,
+            UsValuationModelContext context
     ) {
         List<String> notes = new ArrayList<>();
         String dataVersion = firstNonBlank(snapshot.dataVersion(), "").toLowerCase(Locale.ROOT);
         notes.add("price data version=" + firstNonBlank(snapshot.dataVersion(), "unknown"));
-        if (!dataVersion.contains("longbridge") && dataVersion.contains("stooq")) {
-            notes.add("US price layer is still on fallback source for this run.");
+        if ("research_fallback".equals(priceQuality.priceSourceType())) {
+            notes.add("Price layer is on research fallback and is excluded from tradable rankings.");
+        }
+        if (priceQuality.priceFreshnessDays() != null && priceQuality.priceFreshnessDays() > 3) {
+            notes.add("Price freshness exceeds strict ranking threshold at " + priceQuality.priceFreshnessDays() + " days.");
         }
         if (!dataQuality.warningFlags().isEmpty()) {
             notes.add("data quality warnings=" + String.join(", ", dataQuality.warningFlags()));
@@ -913,6 +998,14 @@ public class UsEquityValuationService {
                 .count();
         if (sparseMethods > 0) {
             notes.add("historical/relative market samples remain sparse for part of the method set.");
+        }
+        if (selectedMethods.stream().anyMatch(UsConfiguredMethodValuation::outlierTrimmed)) {
+            notes.add("DCF outlier guardrail trimmed an extreme method output.");
+        }
+        if (context != null
+                && context.externalParameterSnapshot() != null
+                && context.externalParameterSnapshot().industryFallbackUsed()) {
+            notes.add("Industry multiple match fell back from the preferred Damodaran alias chain.");
         }
         return String.join(" ", notes);
     }
@@ -955,7 +1048,11 @@ public class UsEquityValuationService {
             String modelSelectionReason
     ) {
         String methods = methodOutputs.stream()
-                .map(output -> output.method() + "=" + output.baseValue() + "x" + output.weight())
+                .map(output -> output.method() + "=" + output.baseValue() + "x" + output.weight()
+                        + "[" + firstNonBlank(output.methodStatus(), "active")
+                        + (output.outlierTrimmed() ? ",trimmed" : "")
+                        + (output.weightAdjustedByDataQuality() ? ",quality-adjusted" : "")
+                        + "]")
                 .reduce((left, right) -> left + "; " + right)
                 .orElse("No methods selected.");
         return modelSelectionReason + " Methods: " + methods + ". Sources: " + asText(sourceAttribution);
@@ -1016,7 +1113,10 @@ public class UsEquityValuationService {
                 MathSupport.round(method.baseValue() * styleFactor),
                 MathSupport.round(method.bullValue() * styleFactor),
                 method.weight(),
-                method.rationale()
+                method.rationale(),
+                method.methodStatus(),
+                method.outlierTrimmed(),
+                method.weightAdjustedByDataQuality()
         );
     }
 
@@ -1057,7 +1157,10 @@ public class UsEquityValuationService {
                             method.primaryMethod(),
                             method.assumptionsJson(),
                             method.sensitivityJson(),
-                            method.notes()
+                            method.notes(),
+                            method.methodStatus(),
+                            method.outlierTrimmed(),
+                            method.weightAdjustedByDataQuality()
                     ))
                     .toList();
         }
@@ -1073,12 +1176,206 @@ public class UsEquityValuationService {
                         method.primaryMethod(),
                         method.assumptionsJson(),
                         method.sensitivityJson(),
-                        method.notes()
+                        method.notes(),
+                        method.methodStatus(),
+                        method.outlierTrimmed(),
+                        method.weightAdjustedByDataQuality()
                 ))
                 .toList();
     }
 
-    private String verdict(ValuationResult base) {
+    private List<UsConfiguredMethodValuation> applyQualityGuardrails(
+            List<UsConfiguredMethodValuation> methods,
+            UsValuationModelContext context,
+            UsDataQualityResponse dataQuality,
+            PriceQualityAssessment priceQuality
+    ) {
+        if (methods == null || methods.isEmpty()) {
+            return List.of();
+        }
+        List<UsConfiguredMethodValuation> adjusted = new ArrayList<>(normalizeMethodWeights(methods));
+        boolean lowQualityInput = isLowQualityInput(dataQuality, priceQuality);
+        if (lowQualityInput) {
+            adjusted = capDcfWeight(adjusted, 0.15);
+        }
+        if (context != null
+                && context.security() != null
+                && "us_managed_care".equalsIgnoreCase(context.security().sectorTemplate())) {
+            adjusted = trimManagedCareDcfOutlier(adjusted);
+        }
+        return normalizeMethodWeights(adjusted);
+    }
+
+    private boolean isLowQualityInput(UsDataQualityResponse dataQuality, PriceQualityAssessment priceQuality) {
+        return dataQuality.latest10kDate() == null
+                || dataQuality.latest10kDate().isBlank()
+                || dataQuality.latest10qDate() == null
+                || dataQuality.latest10qDate().isBlank()
+                || !dataQuality.shareCountVerified()
+                || "guidance_blind".equalsIgnoreCase(dataQuality.guidanceStatus())
+                || "research_fallback".equalsIgnoreCase(priceQuality.priceSourceType());
+    }
+
+    private List<UsConfiguredMethodValuation> capDcfWeight(List<UsConfiguredMethodValuation> methods, double maxWeight) {
+        int dcfIndex = indexOfMethod(methods, "dcf");
+        if (dcfIndex < 0) {
+            return methods;
+        }
+        UsConfiguredMethodValuation dcf = methods.get(dcfIndex);
+        if (dcf.weight() <= maxWeight) {
+            return methods;
+        }
+        double diff = dcf.weight() - maxWeight;
+        List<UsConfiguredMethodValuation> adjusted = new ArrayList<>(methods);
+        adjusted.set(dcfIndex, copyMethod(
+                dcf,
+                dcf.bearValue(),
+                dcf.baseValue(),
+                dcf.bullValue(),
+                maxWeight,
+                dcf.notes(),
+                "weight_capped_low_quality",
+                dcf.outlierTrimmed(),
+                true
+        ));
+
+        List<Integer> preferredTargets = List.of(indexOfMethod(methods, "relative_valuation"), indexOfMethod(methods, "historical_multiple"));
+        List<Integer> targetIndexes = preferredTargets.stream().filter(index -> index >= 0).distinct().toList();
+        if (targetIndexes.isEmpty()) {
+            targetIndexes = methods.stream()
+                    .map(UsConfiguredMethodValuation::method)
+                    .map(String::toLowerCase)
+                    .toList()
+                    .stream()
+                    .map(name -> indexOfMethod(methods, name))
+                    .filter(index -> index >= 0 && index != dcfIndex)
+                    .distinct()
+                    .toList();
+        }
+        if (targetIndexes.isEmpty()) {
+            return adjusted;
+        }
+        double perTarget = diff / targetIndexes.size();
+        for (Integer targetIndex : targetIndexes) {
+            UsConfiguredMethodValuation target = adjusted.get(targetIndex);
+            adjusted.set(targetIndex, copyMethod(
+                    target,
+                    target.bearValue(),
+                    target.baseValue(),
+                    target.bullValue(),
+                    target.weight() + perTarget,
+                    target.notes(),
+                    target.methodStatus(),
+                    target.outlierTrimmed(),
+                    true
+            ));
+        }
+        return adjusted;
+    }
+
+    private List<UsConfiguredMethodValuation> trimManagedCareDcfOutlier(List<UsConfiguredMethodValuation> methods) {
+        int dcfIndex = indexOfMethod(methods, "dcf");
+        if (dcfIndex < 0) {
+            return methods;
+        }
+        List<Double> otherBaseValues = methods.stream()
+                .filter(method -> !"dcf".equalsIgnoreCase(method.method()))
+                .map(UsConfiguredMethodValuation::baseValue)
+                .filter(value -> value > 0.0)
+                .sorted()
+                .toList();
+        if (otherBaseValues.size() < 2) {
+            return methods;
+        }
+        double median = medianOfDoubles(otherBaseValues);
+        double max = otherBaseValues.stream().mapToDouble(Double::doubleValue).max().orElse(0.0);
+        UsConfiguredMethodValuation dcf = methods.get(dcfIndex);
+        if (median <= 0.0 || dcf.baseValue() <= median * 1.75) {
+            return methods;
+        }
+        double clampCeiling = max * 1.25;
+        String note = appendNote(dcf.notes(), "Managed care DCF outlier trimmed against peer method median.");
+        List<UsConfiguredMethodValuation> adjusted = new ArrayList<>(methods);
+        adjusted.set(dcfIndex, copyMethod(
+                dcf,
+                Math.min(dcf.bearValue(), clampCeiling),
+                Math.min(dcf.baseValue(), clampCeiling),
+                Math.min(dcf.bullValue(), clampCeiling),
+                dcf.weight(),
+                note,
+                "outlier_trimmed",
+                true,
+                dcf.weightAdjustedByDataQuality()
+        ));
+        return adjusted;
+    }
+
+    private UsConfiguredMethodValuation copyMethod(
+            UsConfiguredMethodValuation method,
+            double bearValue,
+            double baseValue,
+            double bullValue,
+            double weight,
+            String notes,
+            String methodStatus,
+            boolean outlierTrimmed,
+            boolean weightAdjustedByDataQuality
+    ) {
+        return new UsConfiguredMethodValuation(
+                method.method(),
+                MathSupport.round(bearValue),
+                MathSupport.round(baseValue),
+                MathSupport.round(bullValue),
+                MathSupport.round(weight),
+                method.rationale(),
+                method.inputSnapshotDate(),
+                method.primaryMethod(),
+                method.assumptionsJson(),
+                method.sensitivityJson(),
+                notes,
+                methodStatus,
+                outlierTrimmed,
+                weightAdjustedByDataQuality
+        );
+    }
+
+    private int indexOfMethod(List<UsConfiguredMethodValuation> methods, String methodName) {
+        for (int index = 0; index < methods.size(); index += 1) {
+            if (methodName.equalsIgnoreCase(methods.get(index).method())) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private double medianOfDoubles(List<Double> values) {
+        if (values == null || values.isEmpty()) {
+            return 0.0;
+        }
+        int middle = values.size() / 2;
+        if (values.size() % 2 == 0) {
+            return (values.get(middle - 1) + values.get(middle)) / 2.0;
+        }
+        return values.get(middle);
+    }
+
+    private String appendNote(String notes, String append) {
+        if (notes == null || notes.isBlank()) {
+            return append;
+        }
+        if (notes.contains(append)) {
+            return notes;
+        }
+        return notes + " " + append;
+    }
+
+    private String verdict(ValuationResult base, PriceQualityAssessment priceQuality) {
+        if ("LOW_CONFIDENCE_STALE_PRICE".equals(priceQuality.valuationStatus())) {
+            return "LOW_CONFIDENCE_STALE_PRICE";
+        }
+        if (!priceQuality.rankable()) {
+            return "RESEARCH_ONLY_FALLBACK_PRICE";
+        }
         if (base.upside() >= 0.20) {
             return "Undervalued with margin";
         }
@@ -1094,7 +1391,13 @@ public class UsEquityValuationService {
         return "Fairly valued";
     }
 
-    private String assessment(ValuationResult base) {
+    private String assessment(ValuationResult base, PriceQualityAssessment priceQuality) {
+        if (!priceQuality.rankable()) {
+            return "research_only";
+        }
+        if ("LOW_CONFIDENCE_STALE_PRICE".equals(priceQuality.valuationStatus())) {
+            return "stale_price";
+        }
         if (base.upside() > 0.05) {
             return "discount_to_fair_value";
         }
@@ -1206,6 +1509,50 @@ public class UsEquityValuationService {
                 .replace(".", "-");
     }
 
+    private boolean shouldRefreshStoredSnapshot(String ticker, UsStoredValuationSnapshotRecord stored) {
+        if (stored == null) {
+            return true;
+        }
+        if (stored.priceSourceType() == null || stored.priceSourceType().isBlank()) {
+            return true;
+        }
+        if (stored.valuationStatus() == null || stored.valuationStatus().isBlank()) {
+            return true;
+        }
+        if (stored.industryMatchSource() == null || stored.industryMatchSource().isBlank()) {
+            return true;
+        }
+        UsSecurityMaster security = usSecurityMasterService.findByTicker(ticker).orElse(null);
+        return requiresManagedCareReclassification(security);
+    }
+
+    private boolean requiresManagedCareReclassification(UsSecurityMaster security) {
+        if (security == null) {
+            return false;
+        }
+        String normalizedIndustry = normalizeComparable(security.industry());
+        boolean managedCareIndustry = normalizedIndustry.contains("managed care")
+                || normalizedIndustry.contains("health plan")
+                || normalizedIndustry.contains("medical service plan")
+                || normalizedIndustry.contains("health benefits")
+                || normalizedIndustry.contains("healthcare support services")
+                || normalizedIndustry.contains("insurance health")
+                || normalizedIndustry.contains("hospital and medical service plans")
+                || normalizedIndustry.contains("hospital and medical service plan");
+        return managedCareIndustry && !"us_managed_care".equalsIgnoreCase(security.sectorTemplate());
+    }
+
+    private String normalizeComparable(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.toLowerCase(Locale.ROOT)
+                .replace("&", "and")
+                .replaceAll("[^a-z0-9]+", " ")
+                .trim()
+                .replaceAll("\\s+", " ");
+    }
+
     /** Extracts the primary price source from a compound data-version string (e.g. "longbridge:2026-03-30|stooq:…" → "longbridge:2026-03-30"). */
     private String parsePriceSource(String dataVersion) {
         if (dataVersion == null || dataVersion.isBlank()) {
@@ -1213,6 +1560,68 @@ public class UsEquityValuationService {
         }
         int pipe = dataVersion.indexOf('|');
         return pipe >= 0 ? dataVersion.substring(0, pipe) : dataVersion;
+    }
+
+    private PriceQualityAssessment assessPriceQuality(StockSnapshot snapshot) {
+        String priceSource = parsePriceSource(snapshot.dataVersion());
+        String sourceType = resolveSourceType(priceSource);
+        LocalDate priceAsOf = extractPriceAsOf(priceSource);
+        Integer freshnessDays = priceAsOf == null
+                ? null
+                : Math.toIntExact(Math.max(0L, ChronoUnit.DAYS.between(priceAsOf, LocalDate.now())));
+        boolean isTradable = "tradable".equals(sourceType) || "market_data".equals(sourceType);
+        boolean rankable = devRankableOverride || (isTradable && (freshnessDays == null || freshnessDays <= 3));
+        String valuationStatus = "ACTIVE";
+        String exclusionReason = null;
+        if (!isTradable) {
+            valuationStatus = "RESEARCH_ONLY_FALLBACK_PRICE";
+            exclusionReason = "research_fallback_price";
+        }
+        if (freshnessDays != null && freshnessDays > 3) {
+            valuationStatus = freshnessDays > 10 ? "LOW_CONFIDENCE_STALE_PRICE" : "STALE_PRICE";
+            exclusionReason = "stale_price";
+        }
+        return new PriceQualityAssessment(
+                priceAsOf,
+                freshnessDays,
+                sourceType,
+                rankable,
+                valuationStatus,
+                exclusionReason
+        );
+    }
+
+    /**
+     * Classifies a price source string into one of three tiers:
+     * <ul>
+     *   <li>{@code tradable} – institutional real-time feed (Longbridge)</li>
+     *   <li>{@code market_data} – public near-daily market quote (Stooq); treated as rankable when fresh</li>
+     *   <li>{@code research_fallback} – SEC filing date, seed template, or unknown</li>
+     * </ul>
+     */
+    private String resolveSourceType(String priceSource) {
+        if (priceSource == null) {
+            return "research_fallback";
+        }
+        if (priceSource.startsWith("longbridge:")) {
+            return "tradable";
+        }
+        if (priceSource.startsWith("stooq:") && !priceSource.equals("stooq:fallback")) {
+            return "market_data";
+        }
+        return "research_fallback";
+    }
+
+    private LocalDate extractPriceAsOf(String priceSource) {
+        if (priceSource == null || priceSource.isBlank() || !priceSource.contains(":")) {
+            return null;
+        }
+        String candidate = priceSource.substring(priceSource.indexOf(':') + 1).trim();
+        try {
+            return LocalDate.parse(candidate);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private String firstNonBlank(String... values) {
@@ -1328,6 +1737,16 @@ public class UsEquityValuationService {
     private record ComputedValuation(
             UsValuationRunResponse run,
             UsValuationReportResponse report
+    ) {
+    }
+
+    private record PriceQualityAssessment(
+            LocalDate priceAsOf,
+            Integer priceFreshnessDays,
+            String priceSourceType,
+            boolean rankable,
+            String valuationStatus,
+            String exclusionReason
     ) {
     }
 }

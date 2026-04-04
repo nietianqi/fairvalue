@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 public record UsConfiguredValuationResult(
+        UsValuationModelContext context,
         List<UsConfiguredMethodValuation> methods,
         UsReverseDcfAnalysis reverseDcfAnalysis,
         UsRiskMatrixResult riskMatrixResult,

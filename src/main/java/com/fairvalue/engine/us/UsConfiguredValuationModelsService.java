@@ -138,7 +138,8 @@ public class UsConfiguredValuationModelsService {
                 latestQualityScore,
                 latestAudit,
                 dailyHistory,
-                marketSnapshots
+                marketSnapshots,
+                externalParameterSnapshot
         );
     }
 
@@ -226,6 +227,7 @@ public class UsConfiguredValuationModelsService {
                 + " and parameter overrides from valuation_parameter_set.";
 
         return new UsConfiguredValuationResult(
+                context,
                 methods,
                 reverseScenario.analysis,
                 riskMatrixResult,
@@ -496,6 +498,9 @@ public class UsConfiguredValuationModelsService {
         assumptions.put("peer_selection_rule_version", peerSelection.ruleVersion());
         assumptions.put("peer_filter_summary", peerSelection.filterSummary());
         assumptions.put("peer_filter_metrics", peerSelection.filterMetrics());
+        assumptions.put("industry_match_source", context.externalParameterSnapshot() == null ? null : context.externalParameterSnapshot().industryMatchSource());
+        assumptions.put("industry_match_confidence", context.externalParameterSnapshot() == null ? null : context.externalParameterSnapshot().industryMatchConfidence());
+        assumptions.put("industry_fallback_used", context.externalParameterSnapshot() != null && context.externalParameterSnapshot().industryFallbackUsed());
         assumptions.put("parameter_sources", parameterSources(context,
                 Map.entry("target_ev_ebitda", "relative.target_ev_ebitda"),
                 Map.entry("target_pe", "relative.target_pe")

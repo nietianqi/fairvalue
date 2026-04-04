@@ -1,5 +1,5 @@
-/**
- * us-stock-detail.js  —  US Stock Valuation Detail Page
+﻿/**
+ * us-stock-detail.js  â€”  US Stock Valuation Detail Page
  * Served by Spring Boot static at /assets/us-stock-detail.js
  *
  * API surface used:
@@ -15,32 +15,32 @@
 
 'use strict';
 
-// ─── Globals ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Globals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let TICKER = '';
 let _historyLoaded = false;
 let _peersLoaded   = false;
 
-// ─── Boot ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Boot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 document.addEventListener('DOMContentLoaded', () => {
   const params = new URLSearchParams(window.location.search);
   TICKER = (params.get('ticker') || '').toUpperCase().trim();
 
   if (!TICKER) {
-    showFatalError('缺少 ticker 参数。请从榜单页选择股票。');
+    showFatalError('ç¼ºå°‘ ticker å‚æ•°ã€‚è¯·ä»Žæ¦œå•é¡µé€‰æ‹©è‚¡ç¥¨ã€‚');
     return;
   }
 
-  document.title = `${TICKER} 估值详情 — Fairvalue`;
+  document.title = `${TICKER} ä¼°å€¼è¯¦æƒ… â€” Fairvalue`;
   loadAll();
 });
 
-// ─── Main Load Orchestrator ──────────────────────────────────────────────────
+// â”€â”€â”€ Main Load Orchestrator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function loadAll() {
   try {
-    // Step 1: parallel — profile + summary + quality cards
+    // Step 1: parallel â€” profile + summary + quality cards
     const [profile, summary, dataQuality, finQuality] = await Promise.all([
       apiFetch(`/v1/us-equities/${TICKER}/profile`),
       apiFetch(`/v1/us-equities/${TICKER}/valuation/summary`),
@@ -68,17 +68,17 @@ async function loadAll() {
       show('value-trap-alert');
     }
 
-    // Step 3: lazy — history + peers loaded on tab switch
+    // Step 3: lazy â€” history + peers loaded on tab switch
   } catch (err) {
-    showFatalError('数据加载失败：' + (err.message || '未知错误'));
+    showFatalError('æ•°æ®åŠ è½½å¤±è´¥ï¼š' + (err.message || 'æœªçŸ¥é”™è¯¯'));
   }
 }
 
-// ─── Header ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function renderHeader(profile, summary) {
   setText('hdr-ticker', TICKER);
-  setText('hdr-name', profile?.companyName || profile?.name || '—');
+  setText('hdr-name', profile?.companyName || profile?.name || 'â€”');
 
   const exchange = profile?.exchange || 'US';
   setText('hdr-exchange', exchange);
@@ -91,27 +91,27 @@ function renderHeader(profile, summary) {
   }
 }
 
-// ─── Hero Band ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ Hero Band â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function renderHero(summary) {
   if (!summary) return;
 
   // Current price
   const price = summary.currentPrice;
-  setText('hero-price', price != null ? fmtUSD(price) : '—');
+  setText('hero-price', price != null ? fmtUSD(price) : 'â€”');
 
   // Fair value range
   const fvr = summary.fairValueRange || {};
-  setText('hero-fv-low',  fvr.low  != null ? fmtUSD(fvr.low)  : '—');
-  setText('hero-fv-mid',  fvr.mid  != null ? fmtUSD(fvr.mid)  : '—');
-  setText('hero-fv-high', fvr.high != null ? fmtUSD(fvr.high) : '—');
+  setText('hero-fv-low',  fvr.low  != null ? fmtUSD(fvr.low)  : 'â€”');
+  setText('hero-fv-mid',  fvr.mid  != null ? fmtUSD(fvr.mid)  : 'â€”');
+  setText('hero-fv-high', fvr.high != null ? fmtUSD(fvr.high) : 'â€”');
 
   // Upside
   const upside = summary.upsideDownside;
   const upsideEl = document.getElementById('hero-upside');
   if (upsideEl && upside != null) {
     const pct = (upside * 100).toFixed(1);
-    upsideEl.textContent = (upside >= 0 ? '▲ ' : '▼ ') + Math.abs(pct) + '%';
+    upsideEl.textContent = (upside >= 0 ? 'â–² ' : 'â–¼ ') + Math.abs(pct) + '%';
     upsideEl.className = 'upside-value ' + (upside >= 0 ? 'up' : 'down');
   }
 
@@ -129,7 +129,7 @@ function renderHero(summary) {
   renderZone('hero-avoid-zone', summary.avoidZone);
 
   // Confidence bar
-  const conf = summary.confidenceLevel;  // 0.0–1.0
+  const conf = summary.confidenceLevel;  // 0.0â€“1.0
   if (conf != null) {
     const pct = Math.round(conf * 100);
     const fill = document.getElementById('hero-conf-fill');
@@ -158,15 +158,15 @@ function renderZone(elId, zone) {
   if (typeof zone === 'string') {
     el.textContent = zone;
   } else if (zone.low != null && zone.high != null) {
-    el.textContent = `${fmtUSD(zone.low)} – ${fmtUSD(zone.high)}`;
+    el.textContent = `${fmtUSD(zone.low)} â€“ ${fmtUSD(zone.high)}`;
   } else if (zone.low != null) {
-    el.textContent = `≤ ${fmtUSD(zone.low)}`;
+    el.textContent = `â‰¤ ${fmtUSD(zone.low)}`;
   } else if (zone.high != null) {
-    el.textContent = `≥ ${fmtUSD(zone.high)}`;
+    el.textContent = `â‰¥ ${fmtUSD(zone.high)}`;
   }
 }
 
-// ─── Tab: Overview ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Tab: Overview â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function renderOverview(profile, dataQuality, finQuality) {
   renderProfileCard(profile);
@@ -177,16 +177,16 @@ function renderOverview(profile, dataQuality, finQuality) {
 function renderProfileCard(profile) {
   const el = document.getElementById('profile-rows');
   if (!el) return;
-  if (!profile) { el.innerHTML = '<div class="empty-state">暂无数据</div>'; return; }
+  if (!profile) { el.innerHTML = '<div class="empty-state">æš‚æ— æ•°æ®</div>'; return; }
 
   const rows = [
-    ['交易所',    profile.exchange || '—'],
-    ['行业',      profile.sector   || '—'],
-    ['子行业',    profile.industry || '—'],
-    ['市值',      profile.marketCap != null ? fmtMarketCap(profile.marketCap) : '—'],
-    ['公司类型',  formatCompanyType(profile.companyType || '')],
-    ['估值模板',  profile.sectorTemplate || '—'],
-    ['数据版本',  profile.dataVersion || profile.data_version || '—'],
+    ['äº¤æ˜“æ‰€',    profile.exchange || 'â€”'],
+    ['è¡Œä¸š',      profile.sector   || 'â€”'],
+    ['å­è¡Œä¸š',    profile.industry || 'â€”'],
+    ['å¸‚å€¼',      profile.marketCap != null ? fmtMarketCap(profile.marketCap) : 'â€”'],
+    ['å…¬å¸ç±»åž‹',  formatCompanyType(profile.companyType || '')],
+    ['ä¼°å€¼æ¨¡æ¿',  profile.sectorTemplate || 'â€”'],
+    ['æ•°æ®ç‰ˆæœ¬',  profile.dataVersion || profile.data_version || 'â€”'],
   ];
 
   el.innerHTML = rows.map(([label, value]) =>
@@ -200,7 +200,7 @@ function renderProfileCard(profile) {
 function renderDataQualityCard(dq) {
   const el = document.getElementById('data-quality-section');
   if (!el) return;
-  if (!dq) { el.innerHTML = '<div class="empty-state">暂无数据</div>'; return; }
+  if (!dq) { el.innerHTML = '<div class="empty-state">æš‚æ— æ•°æ®</div>'; return; }
 
   const conf = dq.confidenceLevel != null ? Math.round(dq.confidenceLevel * 100) : null;
   const missingItems = dq.missingItems || dq.missing_items || [];
@@ -210,7 +210,7 @@ function renderDataQualityCard(dq) {
   let html = '';
   if (conf != null) {
     html += `<div class="confidence-wrap" style="margin-bottom:12px">
-      <span class="confidence-label">置信度</span>
+      <span class="confidence-label">ç½®ä¿¡åº¦</span>
       <div class="confidence-bar">
         <div class="confidence-fill" style="width:${conf}%"></div>
       </div>
@@ -218,26 +218,26 @@ function renderDataQualityCard(dq) {
     </div>`;
   }
   if (filingDate) {
-    html += `<div class="profile-row"><span class="profile-label">最新财报日期</span><span class="profile-value">${escHtml(filingDate)}</span></div>`;
+    html += `<div class="profile-row"><span class="profile-label">æœ€æ–°è´¢æŠ¥æ—¥æœŸ</span><span class="profile-value">${escHtml(filingDate)}</span></div>`;
   }
   if (missingItems.length) {
-    html += `<div style="margin-top:10px"><div style="font-size:12px;color:var(--muted);margin-bottom:4px">缺失项</div>`;
+    html += `<div style="margin-top:10px"><div style="font-size:12px;color:var(--muted);margin-bottom:4px">ç¼ºå¤±é¡¹</div>`;
     html += missingItems.map(m => `<div class="tag tag-warn">${escHtml(String(m))}</div>`).join('');
     html += '</div>';
   }
   if (warnings.length) {
-    html += `<div style="margin-top:10px"><div style="font-size:12px;color:var(--muted);margin-bottom:4px">警告</div>`;
+    html += `<div style="margin-top:10px"><div style="font-size:12px;color:var(--muted);margin-bottom:4px">è­¦å‘Š</div>`;
     html += warnings.map(w => `<div class="tag tag-bad">${escHtml(String(w))}</div>`).join('');
     html += '</div>';
   }
-  if (!html) html = '<div class="empty-state">数据质量正常</div>';
+  if (!html) html = '<div class="empty-state">æ•°æ®è´¨é‡æ­£å¸¸</div>';
   el.innerHTML = html;
 }
 
 function renderFinQualityCard(fq) {
   const el = document.getElementById('fin-quality-section');
   if (!el) return;
-  if (!fq) { el.innerHTML = '<div class="empty-state">暂无数据</div>'; return; }
+  if (!fq) { el.innerHTML = '<div class="empty-state">æš‚æ— æ•°æ®</div>'; return; }
 
   const total    = fq.totalQualityScore  != null ? Math.round(fq.totalQualityScore * 100)    : null;
   const earnings = fq.earningsScore      != null ? Math.round(fq.earningsScore * 100)         : null;
@@ -250,13 +250,13 @@ function renderFinQualityCard(fq) {
     const cls = total >= 70 ? 'good' : total >= 40 ? 'warn' : 'bad';
     html += `<div style="text-align:center;margin-bottom:14px">
       <div style="font-size:32px;font-weight:800;color:var(--${cls})">${total}</div>
-      <div style="font-size:12px;color:var(--muted)">总财务质量评分</div>
+      <div style="font-size:12px;color:var(--muted)">æ€»è´¢åŠ¡è´¨é‡è¯„åˆ†</div>
     </div>`;
   }
   const scoreRows = [
-    ['盈利质量', earnings],
-    ['收入质量', revenue],
-    ['资本效率', capital],
+    ['ç›ˆåˆ©è´¨é‡', earnings],
+    ['æ”¶å…¥è´¨é‡', revenue],
+    ['èµ„æœ¬æ•ˆçŽ‡', capital],
   ];
   scoreRows.forEach(([label, score]) => {
     if (score == null) return;
@@ -268,15 +268,15 @@ function renderFinQualityCard(fq) {
     </div>`;
   });
   if (redFlags.length) {
-    html += `<div style="margin-top:10px"><div style="font-size:12px;color:var(--muted);margin-bottom:4px">红旗警示</div>`;
+    html += `<div style="margin-top:10px"><div style="font-size:12px;color:var(--muted);margin-bottom:4px">çº¢æ——è­¦ç¤º</div>`;
     html += redFlags.map(f => `<div class="tag tag-bad">${escHtml(String(f))}</div>`).join('');
     html += '</div>';
   }
-  if (!html) html = '<div class="empty-state">暂无数据</div>';
+  if (!html) html = '<div class="empty-state">æš‚æ— æ•°æ®</div>';
   el.innerHTML = html;
 }
 
-// ─── Tab: Valuation ──────────────────────────────────────────────────────────
+// â”€â”€â”€ Tab: Valuation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function renderValuation(report, summary) {
   if (!report) return;
@@ -304,8 +304,9 @@ function renderValuation(report, summary) {
   const decision = report.decision || {};
   patchHeroDecision(decision);
   renderSourceAttribution(decision.sourceAttribution || decision.source_attribution || {});
+  renderWarnings(summary, report);
 
-  // Explanation accordion — from report.explanation.blocks or report.explanationBlocks
+  // Explanation accordion â€” from report.explanation.blocks or report.explanationBlocks
   const expBlocks = report.explanation?.blocks
     || report.explanationBlocks
     || report.explanation_blocks
@@ -344,8 +345,14 @@ function renderMethodTable(breakdown) {
 
   const rows = breakdown.map(m => {
     const weight = m.weight != null ? (m.weight * 100).toFixed(0) + '%' : '—';
+    const methodStatus = m.methodStatus || m.method_status || 'active';
+    const outlierTrimmed = Boolean(m.outlierTrimmed ?? m.outlier_trimmed);
+    const weightAdjusted = Boolean(m.weightAdjustedByDataQuality ?? m.weight_adjusted_by_data_quality);
     return `<tr>
       <td><strong>${escHtml(methodLabel(m.method || ''))}</strong></td>
+      <td>${escHtml(methodStatus)}</td>
+      <td>${outlierTrimmed ? '是' : '否'}</td>
+      <td>${weightAdjusted ? '是' : '否'}</td>
       <td>${weight}</td>
       <td>${fmtUSDOrDash(m.bearValue)}</td>
       <td>${fmtUSDOrDash(m.baseValue)}</td>
@@ -356,7 +363,7 @@ function renderMethodTable(breakdown) {
 
   el.innerHTML = `<table class="data-table">
     <thead><tr>
-      <th>方法</th><th>权重</th><th>悲观</th><th>基准</th><th>乐观</th><th>备注</th>
+      <th>方法</th><th>状态</th><th>剪裁</th><th>质量调权</th><th>权重</th><th>悲观</th><th>基准</th><th>乐观</th><th>备注</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
@@ -366,7 +373,7 @@ function renderScenarioMatrix(scenarios) {
   const el = document.getElementById('scenario-grid');
   if (!el) return;
   if (!scenarios.length) {
-    el.innerHTML = '<div class="empty-state">暂无情景数据</div>';
+    el.innerHTML = '<div class="empty-state">æš‚æ— æƒ…æ™¯æ•°æ®</div>';
     return;
   }
 
@@ -381,22 +388,22 @@ function renderScenarioMatrix(scenarios) {
   el.innerHTML = sorted.map(s => {
     const key   = (s.scenario || '').toLowerCase();
     const label = scenarioLabel(s.scenario || '');
-    const prob  = s.probability != null ? (s.probability * 100).toFixed(0) + '%' : '—';
+    const prob  = s.probability != null ? (s.probability * 100).toFixed(0) + '%' : 'â€”';
     const price = fmtUSDOrDash(s.targetPrice);
-    const up    = s.upside != null ? (s.upside * 100).toFixed(1) + '%' : '—';
+    const up    = s.upside != null ? (s.upside * 100).toFixed(1) + '%' : 'â€”';
     const upCls = s.upside != null ? (s.upside >= 0 ? 'up' : 'down') : '';
 
     // Key assumptions from fairValueLow/High or generic fields
     const low  = fmtUSDOrDash(s.fairValueLow);
     const high = fmtUSDOrDash(s.fairValueHigh);
     const range = (s.fairValueLow != null && s.fairValueHigh != null)
-      ? `<div class="scenario-assumption">公允区间 ${low} – ${high}</div>` : '';
+      ? `<div class="scenario-assumption">å…¬å…åŒºé—´ ${low} â€“ ${high}</div>` : '';
 
     return `<div class="scenario-card ${key}">
       <div class="scenario-label">${label}</div>
-      <div class="scenario-prob">概率 ${prob}</div>
+      <div class="scenario-prob">æ¦‚çŽ‡ ${prob}</div>
       <div class="scenario-price">${price}</div>
-      <div class="scenario-upside ${upCls}">${s.upside != null ? (s.upside >= 0 ? '▲' : '▼') + ' ' + Math.abs((s.upside * 100).toFixed(1)) + '%' : '—'}</div>
+      <div class="scenario-upside ${upCls}">${s.upside != null ? (s.upside >= 0 ? 'â–²' : 'â–¼') + ' ' + Math.abs((s.upside * 100).toFixed(1)) + '%' : 'â€”'}</div>
       ${range}
     </div>`;
   }).join('');
@@ -407,16 +414,22 @@ function renderSourceAttribution(attr) {
   if (!el) return;
 
   const displayRules = {
-    price_source:              '价格来源',
-    risk_free_rate_source:     '无风险利率',
-    erp_source:                'ERP来源',
-    beta_source:               'Beta来源',
-    industry_multiple_source:  '行业倍数来源',
-    market_multiple_source:    '市场倍数来源',
-    peer_set_source:           'Peer集合来源',
-    peer_selection_basis:      'Peer筛选依据',
-    relative_source_mode:      '相对估值模式',
-    data_version:              '数据版本',
+    price_source: '价格来源',
+    price_source_type: '价格类型',
+    price_as_of: '价格日期',
+    price_freshness_days: '价格鲜度',
+    risk_free_rate_source: '无风险利率',
+    erp_source: 'ERP来源',
+    beta_source: 'Beta来源',
+    industry_multiple_source: '行业倍数来源',
+    industry_match_source: '行业匹配来源',
+    industry_match_confidence: '行业匹配置信',
+    industry_fallback_used: '行业回退',
+    market_multiple_source: '市场倍数来源',
+    peer_set_source: 'Peer集合来源',
+    peer_selection_basis: 'Peer筛选依据',
+    relative_source_mode: '相对估值模式',
+    data_version: '数据版本',
   };
 
   let html = '';
@@ -429,7 +442,6 @@ function renderSourceAttribution(attr) {
     </div>`;
   }
 
-  // Peer set tickers as badges
   const peerTickers = attr.peer_set_tickers || attr.peerSetTickers || [];
   if (peerTickers.length) {
     html += `<div class="attr-item" style="grid-column:1/-1">
@@ -441,7 +453,51 @@ function renderSourceAttribution(attr) {
   el.innerHTML = html || '<div class="empty-state">暂无来源归因数据</div>';
 }
 
-// ─── Tab: History (SVG Chart) ─────────────────────────────────────────────────
+function renderWarnings(summary, report) {
+  const stack = document.getElementById('hero-warning-stack');
+  if (!stack) return;
+
+  const decision = report?.decision || {};
+  const attr = decision.sourceAttribution || decision.source_attribution || {};
+  const breakdown = report?.valuationBreakdown || report?.valuation_breakdown || [];
+  const warnings = [];
+
+  if (summary?.priceSourceType === 'research_fallback') {
+    warnings.push({
+      cls: 'hero-warning-bad',
+      text: '当前价格来自 research fallback，这份结论更适合研究参考，不会进入严格可交易排名。',
+    });
+  }
+
+  if (summary?.rankable === false) {
+    warnings.push({
+      cls: 'hero-warning-warn',
+      text: `这只股票当前不参与严格榜单排名${summary?.exclusionReason ? `，原因：${summary.exclusionReason}` : ''}。`,
+    });
+  }
+
+  const industryFallbackUsed = attr.industryFallbackUsed ?? attr.industry_fallback_used;
+  if (industryFallbackUsed === true) {
+    warnings.push({
+      cls: 'hero-warning-warn',
+      text: '行业匹配已经使用 fallback 路径，相对估值参数可能比平时更保守。',
+    });
+  }
+
+  const trimmedMethods = breakdown.filter(item => Boolean(item.outlierTrimmed ?? item.outlier_trimmed));
+  if (trimmedMethods.length) {
+    warnings.push({
+      cls: 'hero-warning-warn',
+      text: `估值护栏已对 ${trimmedMethods.map(item => methodLabel(item.method || '')).join('、')} 做异常剪裁，用来防止坏输入抬高公允价值。`,
+    });
+  }
+
+  stack.innerHTML = warnings.map(warning =>
+    `<div class="hero-warning ${warning.cls}">${escHtml(warning.text)}</div>`
+  ).join('');
+}
+
+// â”€â”€â”€ Tab: History (SVG Chart) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function loadHistory() {
   if (_historyLoaded) return;
@@ -449,18 +505,18 @@ async function loadHistory() {
 
   const wrap = document.getElementById('chart-wrap');
   if (!wrap) return;
-  wrap.innerHTML = '<div class="empty-state">加载中…</div>';
+  wrap.innerHTML = '<div class="empty-state">åŠ è½½ä¸­â€¦</div>';
 
   try {
     const data = await apiFetch(`/v1/valuation/history/US/${TICKER}?days=90`);
     const points = data?.points || data || [];
     if (!points.length) {
-      wrap.innerHTML = '<div class="empty-state">暂无历史数据</div>';
+      wrap.innerHTML = '<div class="empty-state">æš‚æ— åŽ†å²æ•°æ®</div>';
       return;
     }
     renderHistoryChart(points, wrap);
   } catch (e) {
-    wrap.innerHTML = `<div class="empty-state">历史数据加载失败：${escHtml(e.message)}</div>`;
+    wrap.innerHTML = `<div class="empty-state">åŽ†å²æ•°æ®åŠ è½½å¤±è´¥ï¼š${escHtml(e.message)}</div>`;
   }
 }
 
@@ -477,7 +533,7 @@ function renderHistoryChart(points, container) {
     .sort((a, b) => a.date < b.date ? -1 : 1);
 
   if (!pts.length) {
-    container.innerHTML = '<div class="empty-state">暂无有效历史数据</div>';
+    container.innerHTML = '<div class="empty-state">æš‚æ— æœ‰æ•ˆåŽ†å²æ•°æ®</div>';
     return;
   }
 
@@ -516,7 +572,7 @@ function renderHistoryChart(points, container) {
     shadePath = `<polygon points="${poly}" fill="rgba(13,91,215,0.07)" />`;
   }
 
-  // X-axis labels — pick ~5 evenly spaced dates
+  // X-axis labels â€” pick ~5 evenly spaced dates
   const labelIdxs = pts.length <= 6
     ? pts.map((_, i) => i)
     : [0, Math.floor(pts.length * 0.25), Math.floor(pts.length * 0.5), Math.floor(pts.length * 0.75), pts.length - 1];
@@ -535,7 +591,7 @@ function renderHistoryChart(points, container) {
             <line x1="${PAD.left}" y1="${y.toFixed(1)}" x2="${W - PAD.right}" y2="${y.toFixed(1)}" stroke="#e2e7ef" stroke-width="1" />`;
   }).join('');
 
-  // Hover overlay — invisible rects triggering tooltip
+  // Hover overlay â€” invisible rects triggering tooltip
   const tooltip  = document.getElementById('chart-tooltip');
   const chartNote = document.getElementById('chart-note');
 
@@ -572,7 +628,7 @@ function renderHistoryChart(points, container) {
 
   if (chartNote) {
     const latest = pts[pts.length - 1];
-    chartNote.textContent = latest.runDate ? `最近估值日期：${latest.runDate}` : '';
+    chartNote.textContent = latest.runDate ? `æœ€è¿‘ä¼°å€¼æ—¥æœŸï¼š${latest.runDate}` : '';
   }
 
   // Attach tooltip events
@@ -580,14 +636,14 @@ function renderHistoryChart(points, container) {
     rect.addEventListener('mouseenter', e => {
       if (!tooltip) return;
       const d    = rect.dataset.date  || '';
-      const cl   = rect.dataset.close || '—';
-      const fv   = rect.dataset.fv    || '—';
+      const cl   = rect.dataset.close || 'â€”';
+      const fv   = rect.dataset.fv    || 'â€”';
       const rd   = rect.dataset.rd    || '';
       tooltip.innerHTML = `
         <div class="tt-date">${d}</div>
-        <div class="tt-row"><span class="tt-label">收盘价</span><span class="tt-val">$${cl}</span></div>
-        <div class="tt-row"><span class="tt-label">公允价值</span><span class="tt-val">${fv !== '' ? '$' + fv : '—'}</span></div>
-        ${rd ? `<div class="tt-row" style="font-size:11px;color:var(--muted)">估值日 ${rd}</div>` : ''}
+        <div class="tt-row"><span class="tt-label">æ”¶ç›˜ä»·</span><span class="tt-val">$${cl}</span></div>
+        <div class="tt-row"><span class="tt-label">å…¬å…ä»·å€¼</span><span class="tt-val">${fv !== '' ? '$' + fv : 'â€”'}</span></div>
+        ${rd ? `<div class="tt-row" style="font-size:11px;color:var(--muted)">ä¼°å€¼æ—¥ ${rd}</div>` : ''}
       `;
       const svgRect  = container.getBoundingClientRect();
       const rectRect = rect.getBoundingClientRect();
@@ -603,7 +659,7 @@ function renderHistoryChart(points, container) {
   });
 }
 
-// ─── Tab: Peers ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ Tab: Peers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function loadPeers() {
   if (_peersLoaded) return;
@@ -613,103 +669,103 @@ async function loadPeers() {
   const tableEl = document.getElementById('peers-table-wrap');
   if (!metaEl || !tableEl) return;
 
-  metaEl.innerHTML  = '<div class="empty-state">加载中…</div>';
-  tableEl.innerHTML = '<div class="empty-state">加载中…</div>';
+  metaEl.innerHTML  = '<div class="empty-state">åŠ è½½ä¸­â€¦</div>';
+  tableEl.innerHTML = '<div class="empty-state">åŠ è½½ä¸­â€¦</div>';
 
   try {
     const peers = await apiFetch(`/v1/peers/US/${TICKER}?limit=8`);
     renderPeersMeta(peers, metaEl);
     renderPeersTable(peers?.items || [], tableEl);
   } catch (e) {
-    tableEl.innerHTML = `<div class="empty-state">同行数据加载失败：${escHtml(e.message)}</div>`;
+    tableEl.innerHTML = `<div class="empty-state">åŒè¡Œæ•°æ®åŠ è½½å¤±è´¥ï¼š${escHtml(e.message)}</div>`;
   }
 }
 
 function renderPeersMeta(peers, el) {
   if (!peers) { el.innerHTML = ''; return; }
   const parts = [];
-  if (peers.selectionBasis || peers.selection_basis) parts.push(`筛选依据：${peers.selectionBasis || peers.selection_basis}`);
-  if (peers.sourceMode      || peers.source_mode)     parts.push(`来源模式：${peers.sourceMode || peers.source_mode}`);
+  if (peers.selectionBasis || peers.selection_basis) parts.push(`ç­›é€‰ä¾æ®ï¼š${peers.selectionBasis || peers.selection_basis}`);
+  if (peers.sourceMode      || peers.source_mode)     parts.push(`æ¥æºæ¨¡å¼ï¼š${peers.sourceMode || peers.source_mode}`);
   const peerCandidateCount = peers.peerCandidateCount ?? peers.peer_candidate_count;
-  if (peerCandidateCount != null)                      parts.push(`候选数量：${peerCandidateCount}`);
+  if (peerCandidateCount != null)                      parts.push(`å€™é€‰æ•°é‡ï¼š${peerCandidateCount}`);
   if (peers.peerSelectionRuleVersion || peers.peer_selection_rule_version)
-    parts.push(`规则版本：${peers.peerSelectionRuleVersion || peers.peer_selection_rule_version}`);
+    parts.push(`è§„åˆ™ç‰ˆæœ¬ï¼š${peers.peerSelectionRuleVersion || peers.peer_selection_rule_version}`);
   el.innerHTML = parts.length
-    ? `<div class="peers-meta-text">${parts.map(escHtml).join('　|　')}</div>`
+    ? `<div class="peers-meta-text">${parts.map(escHtml).join('ã€€|ã€€')}</div>`
     : '';
 }
 
 function renderPeersTable(items, el) {
   if (!items.length) {
-    el.innerHTML = '<div class="empty-state">暂无同行数据</div>';
+    el.innerHTML = '<div class="empty-state">æš‚æ— åŒè¡Œæ•°æ®</div>';
     return;
   }
 
   const rows = items.map(p => {
-    const up   = p.upside != null ? ((p.upside * 100).toFixed(1) + '%') : '—';
+    const up   = p.upside != null ? ((p.upside * 100).toFixed(1) + '%') : 'â€”';
     const upCls = p.upside != null ? (p.upside >= 0 ? 'num-good' : 'num-bad') : '';
     return `<tr>
-      <td><a href="/us-stock-detail.html?ticker=${escHtml(p.ticker || '')}" class="ticker-link">${escHtml(p.ticker || '—')}</a></td>
-      <td>${escHtml(p.companyName || p.company_name || '—')}</td>
+      <td><a href="/us-stock-detail.html?ticker=${escHtml(p.ticker || '')}" class="ticker-link">${escHtml(p.ticker || 'â€”')}</a></td>
+      <td>${escHtml(p.companyName || p.company_name || 'â€”')}</td>
       <td>${fmtUSDOrDash(p.currentPrice || p.current_price)}</td>
       <td>${fmtUSDOrDash(p.fairValue || p.fair_value)}</td>
       <td class="${upCls}">${up}</td>
-      <td>${p.pe != null ? p.pe.toFixed(1) + '×' : '—'}</td>
-      <td>${p.evEbitda != null ? p.evEbitda.toFixed(1) + '×' : (p.ev_ebitda != null ? p.ev_ebitda.toFixed(1) + '×' : '—')}</td>
-      <td>${p.roic != null ? (p.roic * 100).toFixed(1) + '%' : '—'}</td>
-      <td>${p.fcfMargin != null ? (p.fcfMargin * 100).toFixed(1) + '%' : (p.fcf_margin != null ? (p.fcf_margin * 100).toFixed(1) + '%' : '—')}</td>
+      <td>${p.pe != null ? p.pe.toFixed(1) + 'Ã—' : 'â€”'}</td>
+      <td>${p.evEbitda != null ? p.evEbitda.toFixed(1) + 'Ã—' : (p.ev_ebitda != null ? p.ev_ebitda.toFixed(1) + 'Ã—' : 'â€”')}</td>
+      <td>${p.roic != null ? (p.roic * 100).toFixed(1) + '%' : 'â€”'}</td>
+      <td>${p.fcfMargin != null ? (p.fcfMargin * 100).toFixed(1) + '%' : (p.fcf_margin != null ? (p.fcf_margin * 100).toFixed(1) + '%' : 'â€”')}</td>
     </tr>`;
   }).join('');
 
   el.innerHTML = `<table class="data-table">
     <thead><tr>
-      <th>股票代码</th><th>公司</th><th>现价</th><th>公允价值</th><th>上行空间</th>
-      <th>PE</th><th>EV/EBITDA</th><th>ROIC</th><th>FCF利润率</th>
+      <th>è‚¡ç¥¨ä»£ç </th><th>å…¬å¸</th><th>çŽ°ä»·</th><th>å…¬å…ä»·å€¼</th><th>ä¸Šè¡Œç©ºé—´</th>
+      <th>PE</th><th>EV/EBITDA</th><th>ROIC</th><th>FCFåˆ©æ¶¦çŽ‡</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
 
-// ─── Tab: Risk ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Tab: Risk â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function renderRiskMatrix(items) {
   const el = document.getElementById('risk-table-wrap');
   if (!el) return;
   if (!items.length) {
-    el.innerHTML = '<div class="empty-state">暂无风险数据</div>';
+    el.innerHTML = '<div class="empty-state">æš‚æ— é£Žé™©æ•°æ®</div>';
     return;
   }
 
   const rows = items.map(r => {
-    const probLabel   = r.probability || '—';
-    const impactLabel = r.impact      || '—';
-    const adjType     = r.adjustmentType || r.adjustment_type || '—';
-    const adj         = r.adjustment  || '—';
+    const probLabel   = r.probability || 'â€”';
+    const impactLabel = r.impact      || 'â€”';
+    const adjType     = r.adjustmentType || r.adjustment_type || 'â€”';
+    const adj         = r.adjustment  || 'â€”';
     return `<tr>
       <td>${escHtml(riskLabel(r.riskType || r.risk_type || ''))}</td>
       <td><span class="risk-level risk-${(r.probability || '').toLowerCase()}">${escHtml(probLabel)}</span></td>
       <td><span class="risk-level risk-${(r.impact || '').toLowerCase()}">${escHtml(impactLabel)}</span></td>
       <td>${escHtml(adjType)}</td>
       <td>${escHtml(String(adj))}</td>
-      <td style="font-size:12px;color:var(--muted)">${escHtml(r.note || '—')}</td>
+      <td style="font-size:12px;color:var(--muted)">${escHtml(r.note || 'â€”')}</td>
     </tr>`;
   }).join('');
 
   el.innerHTML = `<table class="data-table">
     <thead><tr>
-      <th>风险类型</th><th>概率</th><th>影响</th><th>调整类型</th><th>调整值</th><th>备注</th>
+      <th>é£Žé™©ç±»åž‹</th><th>æ¦‚çŽ‡</th><th>å½±å“</th><th>è°ƒæ•´ç±»åž‹</th><th>è°ƒæ•´å€¼</th><th>å¤‡æ³¨</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
 
-// ─── Explanation Blocks (Accordion) ──────────────────────────────────────────
+// â”€â”€â”€ Explanation Blocks (Accordion) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function renderExplanationBlocks(blocks) {
   const el = document.getElementById('explanation-accordion');
   if (!el) return;
   if (!blocks.length) {
-    el.innerHTML = '<div class="empty-state">暂无解释数据</div>';
+    el.innerHTML = '<div class="empty-state">æš‚æ— è§£é‡Šæ•°æ®</div>';
     return;
   }
 
@@ -720,7 +776,7 @@ function renderExplanationBlocks(blocks) {
     return `<div class="accordion-item">
       <button class="accordion-header" onclick="toggleAccordion('${id}')">
         <span class="accordion-title">${escHtml(b.title || b.key || '')}</span>
-        <span class="accordion-arrow" id="arr-${id}">▶</span>
+        <span class="accordion-arrow" id="arr-${id}">â–¶</span>
       </button>
       <div class="accordion-body" id="${id}" style="display:none">
         <p>${escHtml(b.content || '').replace(/\n/g, '<br>')}</p>
@@ -735,10 +791,10 @@ function toggleAccordion(id) {
   if (!body) return;
   const open = body.style.display !== 'none';
   body.style.display = open ? 'none' : 'block';
-  if (arr) arr.textContent = open ? '▶' : '▼';
+  if (arr) arr.textContent = open ? 'â–¶' : 'â–¼';
 }
 
-// ─── Source Attribution Toggle ────────────────────────────────────────────────
+// â”€â”€â”€ Source Attribution Toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function toggleAttr() {
   const body   = document.getElementById('attr-body');
@@ -747,16 +803,16 @@ function toggleAttr() {
   const open = body.classList.contains('open');
   body.classList.toggle('open', !open);
   const arrow = toggle.querySelector('.arrow');
-  if (arrow) arrow.textContent = open ? '▶' : '▼';
+  if (arrow) arrow.textContent = open ? 'â–¶' : 'â–¼';
 }
 
-// ─── Run Valuation ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Run Valuation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function runValuation() {
   const btn = document.getElementById('btn-run');
   if (!btn) return;
   btn.disabled = true;
-  btn.textContent = '⟳ 估值中…';
+  btn.textContent = 'âŸ³ ä¼°å€¼ä¸­â€¦';
 
   try {
     await apiFetch(`/v1/us-equities/${TICKER}/valuation/run`, {
@@ -770,7 +826,7 @@ async function runValuation() {
         customAssumptions: {},
       }),
     });
-    showToast('✓ 重新估值完成，正在刷新…');
+    showToast('âœ“ é‡æ–°ä¼°å€¼å®Œæˆï¼Œæ­£åœ¨åˆ·æ–°â€¦');
     // Reload page data
     _historyLoaded = false;
     _peersLoaded   = false;
@@ -778,13 +834,13 @@ async function runValuation() {
     show('loading');
     setTimeout(() => loadAll(), 600);
   } catch (e) {
-    showToast('✗ 估值失败：' + (e.message || '未知错误'), 'error');
+    showToast('âœ— ä¼°å€¼å¤±è´¥ï¼š' + (e.message || 'æœªçŸ¥é”™è¯¯'), 'error');
     btn.disabled = false;
-    btn.textContent = '⟳ 重新估值';
+    btn.textContent = 'âŸ³ é‡æ–°ä¼°å€¼';
   }
 }
 
-// ─── Tab Switching ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Tab Switching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function switchTab(name, btn) {
   // Update tab buttons
@@ -801,7 +857,7 @@ function switchTab(name, btn) {
   if (name === 'peers')   loadPeers();
 }
 
-// ─── Toast ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function showToast(msg, type = 'success') {
   const el = document.getElementById('toast');
@@ -812,21 +868,21 @@ function showToast(msg, type = 'success') {
   setTimeout(() => el.classList.remove('visible'), 3500);
 }
 
-// ─── Fatal Error ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ Fatal Error â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function showFatalError(msg) {
   hide('loading');
   const app = document.getElementById('app');
   if (app) {
     app.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:16px">
-      <div style="font-size:48px">⚠️</div>
+      <div style="font-size:48px">âš ï¸</div>
       <div style="font-size:18px;color:var(--bad);font-weight:700">${escHtml(msg)}</div>
-      <a href="/cn-undervalued-stocks.html" style="color:var(--blue)">← 返回榜单</a>
+      <a href="/cn-undervalued-stocks.html" style="color:var(--blue)">â† è¿”å›žæ¦œå•</a>
     </div>`;
   }
 }
 
-// ─── API Fetch Helper ─────────────────────────────────────────────────────────
+// â”€â”€â”€ API Fetch Helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function apiFetch(url, options = {}) {
   if (window.FairvaluePlatformApi && typeof window.FairvaluePlatformApi.fetchJson === 'function') {
@@ -840,10 +896,10 @@ async function apiFetch(url, options = {}) {
       const raw = j && typeof j === 'object' && 'success' in j ? (j.error || j) : j;
       detail = raw.message || raw.error || '';
     } catch (_) {}
-    throw new Error(`HTTP ${res.status}${detail ? '：' + detail : ''}`);
+    throw new Error(`HTTP ${res.status}${detail ? 'ï¼š' + detail : ''}`);
   }
   const data = unwrapApiEnvelope(await res.json());
-  // Normalize snake_case keys (Jackson SNAKE_CASE strategy) → camelCase for uniform JS access
+  // Normalize snake_case keys (Jackson SNAKE_CASE strategy) â†’ camelCase for uniform JS access
   return deepCamelCase(data);
 }
 
@@ -859,7 +915,7 @@ function unwrapApiEnvelope(payload) {
 
 /**
  * Recursively converts all snake_case object keys to camelCase.
- * e.g. { fair_value_range: { low: 1 } } → { fairValueRange: { low: 1 } }
+ * e.g. { fair_value_range: { low: 1 } } â†’ { fairValueRange: { low: 1 } }
  */
 function deepCamelCase(obj) {
   if (Array.isArray(obj)) return obj.map(deepCamelCase);
@@ -871,21 +927,21 @@ function deepCamelCase(obj) {
   return obj;
 }
 
-// ─── Format Helpers ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Format Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function fmtUSD(v) {
-  if (v == null) return '—';
+  if (v == null) return 'â€”';
   if (v >= 1000) return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   if (v >= 100)  return '$' + v.toFixed(1);
   return '$' + v.toFixed(2);
 }
 
 function fmtUSDOrDash(v) {
-  return v != null ? fmtUSD(v) : '—';
+  return v != null ? fmtUSD(v) : 'â€”';
 }
 
 function fmtMarketCap(v) {
-  if (v == null) return '—';
+  if (v == null) return 'â€”';
   if (v >= 1e12) return '$' + (v / 1e12).toFixed(2) + 'T';
   if (v >= 1e9)  return '$' + (v / 1e9).toFixed(1)  + 'B';
   if (v >= 1e6)  return '$' + (v / 1e6).toFixed(1)  + 'M';
@@ -894,11 +950,11 @@ function fmtMarketCap(v) {
 
 function verdictLabel(v) {
   const map = {
-    UNDERVALUED: '低估', FAIRLY_VALUED: '合理', OVERVALUED: '高估',
-    undervalued: '低估', fairly_valued: '合理', overvalued: '高估',
-    FAIR: '合理', fair: '合理',
+    UNDERVALUED: 'ä½Žä¼°', FAIRLY_VALUED: 'åˆç†', OVERVALUED: 'é«˜ä¼°',
+    undervalued: 'ä½Žä¼°', fairly_valued: 'åˆç†', overvalued: 'é«˜ä¼°',
+    FAIR: 'åˆç†', fair: 'åˆç†',
   };
-  return map[v] || v || '—';
+  return map[v] || v || 'â€”';
 }
 
 function verdictClass(v) {
@@ -911,67 +967,67 @@ function verdictClass(v) {
 function methodLabel(m) {
   const map = {
     dcf:                  'DCF',
-    reverse_dcf:          '反向DCF',
-    relative_valuation:   '相对估值',
-    historical_multiple:  '历史倍数',
+    reverse_dcf:          'åå‘DCF',
+    relative_valuation:   'ç›¸å¯¹ä¼°å€¼',
+    historical_multiple:  'åŽ†å²å€æ•°',
   };
   return map[m.toLowerCase().replace(/ /g, '_')] || m;
 }
 
 function scenarioLabel(s) {
-  const map = { bear: '悲观', base: '基准', bull: '乐观' };
+  const map = { bear: 'æ‚²è§‚', base: 'åŸºå‡†', bull: 'ä¹è§‚' };
   return map[(s || '').toLowerCase()] || s;
 }
 
 function riskLabel(r) {
   const map = {
-    earnings_miss:            '盈利未达预期',
-    multiple_compression:     '估值压缩',
-    balance_sheet:            '资产负债表风险',
-    liquidity:                '流动性风险',
-    regulatory:               '监管风险',
-    competition:              '竞争加剧',
-    macro:                    '宏观经济',
-    interest_rate:            '利率风险',
-    currency:                 '汇率风险',
-    execution:                '执行风险',
+    earnings_miss:            'ç›ˆåˆ©æœªè¾¾é¢„æœŸ',
+    multiple_compression:     'ä¼°å€¼åŽ‹ç¼©',
+    balance_sheet:            'èµ„äº§è´Ÿå€ºè¡¨é£Žé™©',
+    liquidity:                'æµåŠ¨æ€§é£Žé™©',
+    regulatory:               'ç›‘ç®¡é£Žé™©',
+    competition:              'ç«žäº‰åŠ å‰§',
+    macro:                    'å®è§‚ç»æµŽ',
+    interest_rate:            'åˆ©çŽ‡é£Žé™©',
+    currency:                 'æ±‡çŽ‡é£Žé™©',
+    execution:                'æ‰§è¡Œé£Žé™©',
   };
   return map[r.toLowerCase().replace(/ /g, '_')] || r;
 }
 
 function formatCompanyType(ct) {
   const map = {
-    compounder:       '复利增长型',
-    income_defensive: '收息防御型',
-    growth:           '成长型',
-    cyclical:         '周期型',
-    turnaround:       '转型修复型',
-    general_quality:  '综合质量型',
+    compounder:       'å¤åˆ©å¢žé•¿åž‹',
+    income_defensive: 'æ”¶æ¯é˜²å¾¡åž‹',
+    growth:           'æˆé•¿åž‹',
+    cyclical:         'å‘¨æœŸåž‹',
+    turnaround:       'è½¬åž‹ä¿®å¤åž‹',
+    general_quality:  'ç»¼åˆè´¨é‡åž‹',
   };
   const key = (ct || '').split('/')[0].trim().toLowerCase().replace(/ /g, '_');
-  return map[key] || ct || '—';
+  return map[key] || ct || 'â€”';
 }
 
 function formatAttrValue(raw) {
-  if (!raw) return '来自估值参数模板';
-  if (raw === 'configured_template') return '来自估值参数模板（内嵌参考值）';
-  if (raw === 'configured_template:damodaran_ref') return '以Damodaran历史研究为参考，通过估值参数模板配置';
-  if (raw === 'configured_template:stale_ref') return '来自估值参数模板（参考数据可能已过期）';
-  if (raw === 'template_only') return '仅使用模板数据';
-  if (raw.startsWith('damodaran_live:')) return `Damodaran ${raw.slice(15)} 风险溢价研究（实时）`;
-  if (raw.startsWith('damodaran')) return `Damodaran 数据`;
+  if (!raw) return 'æ¥è‡ªä¼°å€¼å‚æ•°æ¨¡æ¿';
+  if (raw === 'configured_template') return 'æ¥è‡ªä¼°å€¼å‚æ•°æ¨¡æ¿ï¼ˆå†…åµŒå‚è€ƒå€¼ï¼‰';
+  if (raw === 'configured_template:damodaran_ref') return 'ä»¥DamodaranåŽ†å²ç ”ç©¶ä¸ºå‚è€ƒï¼Œé€šè¿‡ä¼°å€¼å‚æ•°æ¨¡æ¿é…ç½®';
+  if (raw === 'configured_template:stale_ref') return 'æ¥è‡ªä¼°å€¼å‚æ•°æ¨¡æ¿ï¼ˆå‚è€ƒæ•°æ®å¯èƒ½å·²è¿‡æœŸï¼‰';
+  if (raw === 'template_only') return 'ä»…ä½¿ç”¨æ¨¡æ¿æ•°æ®';
+  if (raw.startsWith('damodaran_live:')) return `Damodaran ${raw.slice(15)} é£Žé™©æº¢ä»·ç ”ç©¶ï¼ˆå®žæ—¶ï¼‰`;
+  if (raw.startsWith('damodaran')) return `Damodaran æ•°æ®`;
   if (raw.startsWith('fred')) return `FRED ${raw.slice(5)}`;
-  if (raw.startsWith('longbridge:')) return `Longbridge（${raw.slice(11)}）`;
-  if (raw.startsWith('longbridge')) return 'Longbridge 实时报价';
+  if (raw.startsWith('longbridge:')) return `Longbridgeï¼ˆ${raw.slice(11)}ï¼‰`;
+  if (raw.startsWith('longbridge')) return 'Longbridge å®žæ—¶æŠ¥ä»·';
   if (raw.startsWith('stooq')) return `Stooq ${raw.slice(6)}`;
   return raw;
 }
 
-// ─── DOM Helpers ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ DOM Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function setText(id, text) {
   const el = document.getElementById(id);
-  if (el) el.textContent = text ?? '—';
+  if (el) el.textContent = text ?? 'â€”';
 }
 
 function show(id) {
@@ -996,3 +1052,4 @@ function escHtml(str) {
 function toCamelCase(s) {
   return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 }
+

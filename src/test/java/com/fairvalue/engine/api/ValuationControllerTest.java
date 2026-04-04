@@ -77,10 +77,11 @@ class ValuationControllerTest {
                         .param("page", "1")
                         .param("size", "3"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items[0].verdict").exists())
-                .andExpect(jsonPath("$.items[0].cashflow_rating").doesNotExist())
-                .andExpect(jsonPath("$.items[0].growth_rating").doesNotExist())
-                .andExpect(jsonPath("$.items[0].financial_health").doesNotExist());
+                .andExpect(jsonPath("$.items").isArray())
+                .andExpect(jsonPath("$.disclaimer").exists())
+                .andExpect(jsonPath("$.items[*].cashflow_rating").doesNotExist())
+                .andExpect(jsonPath("$.items[*].growth_rating").doesNotExist())
+                .andExpect(jsonPath("$.items[*].financial_health").doesNotExist());
     }
 
     @ParameterizedTest

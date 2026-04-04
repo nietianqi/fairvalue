@@ -84,7 +84,22 @@ public class UsExternalValuationParameterService {
             sources.put("relative.target_ev_ebitda", "damodaran_ev_ebitda:" + industrySnapshot.matchedIndustry());
         }
 
-        return new ExternalParameterSnapshot(parameters, sources);
+        boolean industryFallbackUsed = industrySnapshot == null || industrySnapshot.fallbackUsed();
+        String industryMatchSource = industrySnapshot == null
+                ? "template_fallback"
+                : industrySnapshot.matchSource();
+        Double industryMatchConfidence = industrySnapshot == null
+                ? 0.0
+                : industrySnapshot.matchConfidence();
+
+        return new ExternalParameterSnapshot(
+                parameters,
+                sources,
+                industrySnapshot == null ? null : industrySnapshot.matchedIndustry(),
+                industryMatchSource,
+                industryMatchConfidence,
+                industryFallbackUsed
+        );
     }
 
     private double impliedMarketCap(StockSnapshot snapshot, UsSecurityMaster security) {
@@ -95,6 +110,7 @@ public class UsExternalValuationParameterService {
         double fallbackShares = switch (security == null ? "" : safe(security.sectorTemplate())) {
             case "us_tech_compounder" -> 8_000_000_000.0;
             case "us_general_quality" -> 4_000_000_000.0;
+            case "us_managed_care" -> 900_000_000.0;
             case "us_cyclical" -> 2_500_000_000.0;
             default -> 3_000_000_000.0;
         };
@@ -127,7 +143,11 @@ public class UsExternalValuationParameterService {
 
     public record ExternalParameterSnapshot(
             Map<String, Double> parameters,
-            Map<String, String> sources
+            Map<String, String> sources,
+            String matchedIndustry,
+            String industryMatchSource,
+            Double industryMatchConfidence,
+            boolean industryFallbackUsed
     ) {
         public List<String> appliedSources() {
             return sources.values().stream().distinct().toList();

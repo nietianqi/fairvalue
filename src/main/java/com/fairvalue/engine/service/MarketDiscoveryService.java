@@ -47,6 +47,8 @@ public class MarketDiscoveryService {
     private static final String US_SNAPSHOT_PEER_SOURCE = "market_data_service+valuation_latest_snapshot";
     private static final List<String> DEFAULT_US_PEER_FILTER_METRICS =
             List.of("market_cap", "revenue_growth", "fcf_margin", "roic", "usable_multiple");
+    private static final List<String> MANAGED_CARE_FALLBACK_TICKERS =
+            List.of("ELV", "HUM", "CI", "CNC", "MOH", "CVS");
 
     private final CnStockValuationService cnStockValuationService;
     private final MarketDataService marketDataService;
@@ -181,18 +183,21 @@ public class MarketDiscoveryService {
                 );
             }
 
-            List<MarketRankingItem> pageScopedItems = usSecurityMasterService.findActiveUsUniversePage(resolvedPage, resolvedSize).stream()
-                    .map(this::toUsRankingItem)
-                    .filter(Objects::nonNull)
-                    .sorted(rankingComparator(resolvedRankingType))
-                    .toList();
+            boolean ascending = "overvalued".equals(resolvedRankingType);
+            List<MarketRankingItem> pageScopedItems = coverage.snapshotCount() > 0
+                    ? valuationLatestSnapshotRepository.findRankings(
+                            Market.US.name(),
+                            ascending,
+                            resolvedSize,
+                            Math.max((resolvedPage - 1) * resolvedSize, 0))
+                    : List.of();
             return new MarketRankingResponse(
                 market.name(),
                 resolvedRankingType,
                 resolvedPage,
                 resolvedSize,
-                coverage.universeSize(),
-                "us_security_master_page_scoped_ranking|full-universe-paged",
+                coverage.snapshotCount(),
+                "us_latest_snapshot_page_scoped_ranking",
                 generatedAt,
                 coverage.snapshotCount() > 0 ? valuationLatestSnapshotRepository.latestDataAsOf(Market.US.name()) : dataAsOf,
                 "upside_pct",
@@ -254,6 +259,15 @@ public class MarketDiscoveryService {
                 strictMinMarketCap,
                 strictMaxMarketCap
         );
+        long excludedStalePriceCount = snapshotCount == 0
+                ? 0
+                : valuationLatestSnapshotRepository.countExcludedByReason(Market.US.name(), "stale_price");
+        long excludedBadIndustryMatchCount = snapshotCount == 0
+                ? 0
+                : valuationLatestSnapshotRepository.countIndustryFallbackExcludedByMarket(Market.US.name());
+        long excludedLowConfidenceCount = snapshotCount == 0
+                ? 0
+                : valuationLatestSnapshotRepository.countLowConfidenceExcludedByMarket(Market.US.name(), strictMinConfidence);
         double snapshotCoverage = universeSize <= 0 ? 0.0 : (double) snapshotCount / (double) universeSize;
         double rankableCoverage = universeSize <= 0 ? 0.0 : (double) rankableCount / (double) universeSize;
         double staleRatio = snapshotCount <= 0 ? 1.0 : (double) staleCount / (double) snapshotCount;
@@ -262,13 +276,16 @@ public class MarketDiscoveryService {
                 && rankableCoverage >= strictMinCoverageRatio;
         String disclaimer = strictReady
                 ? ""
-                : "Current US ranking is paged across the full security master universe; until latest snapshots meet strict coverage and freshness thresholds, ordering remains page-scoped within each loaded page.";
+                : "Current US ranking excludes research-only or stale snapshots. Until tradable snapshots meet strict coverage and freshness thresholds, ordering remains page-scoped within each loaded page.";
         return new UsRankingCoverageMetrics(
                 Instant.now(),
                 universeSize,
                 snapshotCount,
                 rankableCount,
                 staleCount,
+                excludedStalePriceCount,
+                excludedBadIndustryMatchCount,
+                excludedLowConfidenceCount,
                 MathSupport.round(snapshotCoverage),
                 MathSupport.round(rankableCoverage),
                 MathSupport.round(staleRatio),
@@ -378,6 +395,10 @@ public class MarketDiscoveryService {
     }
 
     private MarketRankingItem toUsRankingItem(StockSnapshot snapshot) {
+        String dataVersion = snapshot.dataVersion() == null ? "" : snapshot.dataVersion().toLowerCase(Locale.ROOT);
+        if (!dataVersion.contains("longbridge")) {
+            return null;
+        }
         QuickUsListValuation valuation = quickUsListValuation(snapshot);
         StockFundamentals fundamentals = snapshot.fundamentals();
 
@@ -454,6 +475,9 @@ public class MarketDiscoveryService {
             UsMarketSnapshotRecord latestMarketSnapshot,
             UsFinancialDerivedMetricRecord latestDerived
     ) {
+        if (!storedSnapshot.rankable() || storedSnapshot.industryFallbackUsed()) {
+            return null;
+        }
         return new MarketRankingItem(
                 security.ticker(),
                 firstNonBlank(security.companyName(), security.ticker()),
@@ -665,7 +689,12 @@ public class MarketDiscoveryService {
                         LinkedHashMap::new
                 ));
 
-        List<StockSnapshot> selected = marketDataService.listSnapshots(List.of(Market.US)).stream()
+        List<StockSnapshot> candidateSnapshots = managedCareFallbackUniverse(target, targetSecurity);
+        if (candidateSnapshots.isEmpty()) {
+            candidateSnapshots = marketDataService.listSnapshots(List.of(Market.US));
+        }
+
+        List<StockSnapshot> selected = candidateSnapshots.stream()
                 .filter(snapshot -> !snapshot.symbol().equalsIgnoreCase(target.symbol()))
                 .sorted(Comparator
                         .comparingInt((StockSnapshot snapshot) -> snapshotPeerGroupPriority(
@@ -686,7 +715,10 @@ public class MarketDiscoveryService {
                 Long::sum
         ));
 
-        String selectionBasis = selectionBreakdown.containsKey("industry")
+        boolean managedCareFallback = isManagedCare(targetSecurity, target);
+        String selectionBasis = managedCareFallback && !selected.isEmpty()
+                ? "managed_care_rule_profile"
+                : selectionBreakdown.containsKey("industry")
                 ? "snapshot_industry"
                 : selectionBreakdown.containsKey("sector_template")
                 ? "snapshot_sector_template"
@@ -722,6 +754,17 @@ public class MarketDiscoveryService {
                 List.of("industry", "sector_template", "company_type", "market_cap", "pe", "revenue_growth", "fcf_margin", "roic", "liquidity"),
                 items
         );
+    }
+
+    private List<StockSnapshot> managedCareFallbackUniverse(StockSnapshot target, UsSecurityMaster targetSecurity) {
+        if (!isManagedCare(targetSecurity, target)) {
+            return List.of();
+        }
+        return MANAGED_CARE_FALLBACK_TICKERS.stream()
+                .filter(candidate -> !candidate.equalsIgnoreCase(target.symbol()))
+                .map(candidate -> marketDataService.getSnapshot(Market.US, candidate))
+                .filter(Objects::nonNull)
+                .toList();
     }
 
     private Map<String, UsRelativePeerComparable> loadUsPeerCandidates(UsSecurityMaster targetSecurity) {
@@ -1070,9 +1113,32 @@ public class MarketDiscoveryService {
     }
 
     private boolean sameIndustry(StockSnapshot left, StockSnapshot right) {
-        return left.industry() != null
-                && right.industry() != null
-                && left.industry().equalsIgnoreCase(right.industry());
+        return normalizeComparable(left.industry()).equals(normalizeComparable(right.industry()))
+                && !normalizeComparable(left.industry()).isBlank();
+    }
+
+    private boolean isManagedCare(UsSecurityMaster targetSecurity, StockSnapshot target) {
+        if (targetSecurity != null && "us_managed_care".equalsIgnoreCase(targetSecurity.sectorTemplate())) {
+            return true;
+        }
+        String normalizedIndustry = normalizeComparable(target == null ? null : target.industry());
+        return normalizedIndustry.contains("managed care")
+                || normalizedIndustry.contains("health plan")
+                || normalizedIndustry.contains("medical service plan")
+                || normalizedIndustry.contains("hospital and medical service plan")
+                || normalizedIndustry.contains("healthcare support services")
+                || normalizedIndustry.contains("insurance health");
+    }
+
+    private String normalizeComparable(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.toLowerCase(Locale.ROOT)
+                .replace("&", "and")
+                .replaceAll("[^a-z0-9]+", " ")
+                .trim()
+                .replaceAll("\\s+", " ");
     }
 
     private String usPeerMatchBasis(UsSecurityMaster targetSecurity, UsRelativePeerComparable peer) {

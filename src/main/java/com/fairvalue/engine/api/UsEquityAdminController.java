@@ -15,6 +15,7 @@ import com.fairvalue.engine.us.UsValuationJobRecord;
 import com.fairvalue.engine.us.UsValuationJobService;
 import com.fairvalue.engine.us.UsValuationJobSummary;
 import com.fairvalue.engine.us.UsUniverseSyncService;
+import com.fairvalue.engine.us.UsValuationDiagnosticsService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,6 +37,7 @@ public class UsEquityAdminController {
     private final UsValuationJobService usValuationJobService;
     private final UsValuationAlertService usValuationAlertService;
     private final UsSnapshotBackfillService usSnapshotBackfillService;
+    private final UsValuationDiagnosticsService usValuationDiagnosticsService;
     private final MarketDataService marketDataService;
     private final MarketDiscoveryService marketDiscoveryService;
 
@@ -49,6 +51,7 @@ public class UsEquityAdminController {
             UsValuationJobService usValuationJobService,
             UsValuationAlertService usValuationAlertService,
             UsSnapshotBackfillService usSnapshotBackfillService,
+            UsValuationDiagnosticsService usValuationDiagnosticsService,
             MarketDataService marketDataService,
             MarketDiscoveryService marketDiscoveryService
     ) {
@@ -61,6 +64,7 @@ public class UsEquityAdminController {
         this.usValuationJobService = usValuationJobService;
         this.usValuationAlertService = usValuationAlertService;
         this.usSnapshotBackfillService = usSnapshotBackfillService;
+        this.usValuationDiagnosticsService = usValuationDiagnosticsService;
         this.marketDataService = marketDataService;
         this.marketDiscoveryService = marketDiscoveryService;
     }
@@ -73,6 +77,11 @@ public class UsEquityAdminController {
     @GetMapping("/{ticker}/source-status")
     public UsExternalSourceStatusService.ExternalSourceStatus sourceStatus(@PathVariable String ticker) {
         return usExternalSourceStatusService.status(ticker);
+    }
+
+    @GetMapping("/{ticker}/valuation-diagnostics")
+    public UsValuationDiagnosticsService.ValuationDiagnostics valuationDiagnostics(@PathVariable String ticker) {
+        return usValuationDiagnosticsService.diagnostics(ticker);
     }
 
     @GetMapping("/valuation-jobs")

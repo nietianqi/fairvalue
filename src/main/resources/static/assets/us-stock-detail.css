@@ -1,5 +1,5 @@
-/* ============================================================
-   US Stock Detail Page — us-stock-detail.css
+﻿/* ============================================================
+   US Stock Detail Page â€” us-stock-detail.css
    Design language matches cn-undervalued.css
    ============================================================ */
 
@@ -43,7 +43,7 @@ a:hover { text-decoration: underline; }
   padding: 0 16px 64px;
 }
 
-/* ── Loading / Error ─────────────────────────────────────── */
+/* â”€â”€ Loading / Error â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .loading-state, .error-state {
   display: flex;
   flex-direction: column;
@@ -62,7 +62,7 @@ a:hover { text-decoration: underline; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ── Page Header ──────────────────────────────────────────── */
+/* â”€â”€ Page Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .page-header {
   display: flex;
   align-items: center;
@@ -155,7 +155,7 @@ a:hover { text-decoration: underline; }
   animation: spin 0.8s linear infinite;
 }
 
-/* ── Hero Band ────────────────────────────────────────────── */
+/* â”€â”€ Hero Band â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .hero {
   background: var(--panel);
   border-radius: var(--radius);
@@ -275,7 +275,7 @@ a:hover { text-decoration: underline; }
   margin-top: 12px;
 }
 
-/* ── Tab Navigation ───────────────────────────────────────── */
+/* â”€â”€ Tab Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .tab-bar {
   display: flex;
   gap: 2px;
@@ -303,7 +303,7 @@ a:hover { text-decoration: underline; }
 .tab-pane { display: none; }
 .tab-pane.active { display: block; }
 
-/* ── Cards & Panels ───────────────────────────────────────── */
+/* â”€â”€ Cards & Panels â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .card {
   background: var(--panel);
   border-radius: var(--radius);
@@ -325,7 +325,7 @@ a:hover { text-decoration: underline; }
   margin-bottom: 20px;
 }
 
-/* ── Profile Card ─────────────────────────────────────────── */
+/* â”€â”€ Profile Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .profile-rows { }
 .profile-row {
   display: flex;
@@ -339,7 +339,7 @@ a:hover { text-decoration: underline; }
 .profile-key { color: var(--muted); font-size: 13px; }
 .profile-val { font-size: 13px; font-weight: 600; text-align: right; }
 
-/* ── Scores ───────────────────────────────────────────────── */
+/* â”€â”€ Scores â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .score-row {
   display: flex;
   align-items: center;
@@ -356,7 +356,7 @@ a:hover { text-decoration: underline; }
 .score-bar.bad   { background: var(--bad); }
 .score-num { font-size: 13px; font-weight: 700; min-width: 32px; text-align: right; }
 
-/* ── Flag / Warning Tags ──────────────────────────────────── */
+/* â”€â”€ Flag / Warning Tags â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .flag-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .flag-tag {
   display: inline-block;
@@ -369,7 +369,7 @@ a:hover { text-decoration: underline; }
 }
 .flag-tag.red { background: var(--bad-light); color: var(--bad); }
 
-/* ── Method Breakdown Table ───────────────────────────────── */
+/* â”€â”€ Method Breakdown Table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .section-title {
   font-size: 15px;
   font-weight: 700;
@@ -418,7 +418,7 @@ td.muted { color: var(--muted); }
   font-weight: 600;
 }
 
-/* ── Scenario Cards ───────────────────────────────────────── */
+/* â”€â”€ Scenario Cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .scenario-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -464,7 +464,7 @@ td.muted { color: var(--muted); }
 .scenario-upside.up { color: var(--good); }
 .scenario-upside.down { color: var(--bad); }
 
-/* ── Source Attribution Collapse ──────────────────────────── */
+/* â”€â”€ Source Attribution Collapse â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .collapse-toggle {
   background: none;
   border: none;
@@ -507,7 +507,7 @@ td.muted { color: var(--muted); }
   font-weight: 600;
 }
 
-/* ── Implied Expectation ──────────────────────────────────── */
+/* â”€â”€ Implied Expectation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .implied-box {
   display: flex;
   align-items: flex-start;
@@ -520,7 +520,7 @@ td.muted { color: var(--muted); }
 .implied-icon { font-size: 20px; }
 .implied-text { font-size: 14px; color: var(--blue); font-weight: 500; }
 
-/* ── SVG History Chart ────────────────────────────────────── */
+/* â”€â”€ SVG History Chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .chart-container {
   background: var(--panel);
   border-radius: var(--radius);
@@ -571,7 +571,7 @@ svg.chart { display: block; width: 100%; }
   font-style: italic;
 }
 
-/* ── Peers Tab ────────────────────────────────────────────── */
+/* â”€â”€ Peers Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .peers-meta {
   display: flex;
   flex-wrap: wrap;
@@ -588,7 +588,7 @@ svg.chart { display: block; width: 100%; }
 .ticker-link { font-weight: 700; color: var(--blue); }
 .ticker-link:hover { text-decoration: underline; }
 
-/* ── Risk Tab ─────────────────────────────────────────────── */
+/* â”€â”€ Risk Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .risk-level {
   display: inline-block;
   padding: 2px 8px;
@@ -601,7 +601,7 @@ svg.chart { display: block; width: 100%; }
 .risk-level.medium { background: var(--warn-light); color: var(--warn); }
 .risk-level.low    { background: var(--good-light); color: var(--good); }
 
-/* ── Explanation Accordion ────────────────────────────────── */
+/* â”€â”€ Explanation Accordion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .accordion { margin-bottom: 24px; }
 .accordion-item {
   background: var(--panel);
@@ -641,7 +641,7 @@ svg.chart { display: block; width: 100%; }
 }
 .accordion-body.open { display: block; }
 
-/* ── Toast ────────────────────────────────────────────────── */
+/* â”€â”€ Toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .toast {
   position: fixed;
   bottom: 24px;
@@ -663,7 +663,7 @@ svg.chart { display: block; width: 100%; }
 .toast.error { background: var(--bad); }
 .toast.success { background: var(--good); }
 
-/* ── Empty States ─────────────────────────────────────────── */
+/* â”€â”€ Empty States â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .empty-state {
   padding: 40px;
   text-align: center;
@@ -671,16 +671,16 @@ svg.chart { display: block; width: 100%; }
   font-size: 14px;
 }
 
-/* ── Profile card aliases (JS uses -label / -value) ─────────── */
+/* â”€â”€ Profile card aliases (JS uses -label / -value) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .profile-label { color: var(--muted); font-size: 13px; }
 .profile-value { font-size: 13px; font-weight: 600; text-align: right; }
 
-/* ── Attr grid aliases (JS uses attr-item / attr-label / attr-value) ── */
+/* â”€â”€ Attr grid aliases (JS uses attr-item / attr-label / attr-value) â”€â”€ */
 .attr-item { display: flex; flex-direction: column; gap: 2px; }
 .attr-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
 .attr-value { font-size: 13px; font-weight: 500; color: var(--text); }
 
-/* ── Inline tag pills (data quality warnings) ────────────────── */
+/* â”€â”€ Inline tag pills (data quality warnings) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .tag {
   display: inline-block;
   padding: 2px 8px;
@@ -692,19 +692,19 @@ svg.chart { display: block; width: 100%; }
 .tag-warn { background: var(--warn-light); color: var(--warn); }
 .tag-bad  { background: var(--bad-light);  color: var(--bad); }
 
-/* ── Chart SVG class ─────────────────────────────────────────── */
+/* â”€â”€ Chart SVG class â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 svg.chart-svg { display: block; width: 100%; }
 
-/* ── Chart tooltip visibility ───────────────────────────────── */
+/* â”€â”€ Chart tooltip visibility â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .chart-tooltip {
   display: none;
 }
 
-/* ── Numeric coloring helpers ────────────────────────────────── */
+/* â”€â”€ Numeric coloring helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .num-good { color: var(--good); font-weight: 600; }
 .num-bad  { color: var(--bad);  font-weight: 600; }
 
-/* ── Data table generic alias ───────────────────────────────── */
+/* â”€â”€ Data table generic alias â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .data-table { width: 100%; border-collapse: collapse; }
 .data-table thead th {
   background: #f8f9fc;
@@ -725,10 +725,10 @@ svg.chart-svg { display: block; width: 100%; }
 .data-table tbody tr:last-child td { border-bottom: none; }
 .data-table tbody tr:hover td { background: #fafbfd; }
 
-/* ── Peers meta text ─────────────────────────────────────────── */
+/* â”€â”€ Peers meta text â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .peers-meta-text { color: var(--muted); font-size: 13px; }
 
-/* ── Scenario card inner labels ──────────────────────────────── */
+/* â”€â”€ Scenario card inner labels â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .scenario-label {
   font-size: 12px;
   text-transform: uppercase;
@@ -746,11 +746,11 @@ svg.chart-svg { display: block; width: 100%; }
   margin-top: 8px;
 }
 
-/* ── Toast type aliases ──────────────────────────────────────── */
+/* â”€â”€ Toast type aliases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .toast-error   { background: var(--bad)  !important; }
 .toast-success { background: var(--good) !important; }
 
-/* ── Responsive ───────────────────────────────────────────── */
+/* â”€â”€ Responsive â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 @media (max-width: 860px) {
   .hero-grid {
     grid-template-columns: 1fr 1fr;
@@ -780,4 +780,30 @@ svg.chart-svg { display: block; width: 100%; }
   .header-actions {
     margin-left: 0;
   }
+}
+
+.hero-warning-stack {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.hero-warning {
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.hero-warning-warn {
+  background: var(--warn-light);
+  border-color: #efd7a1;
+  color: var(--warn);
+}
+
+.hero-warning-bad {
+  background: var(--bad-light);
+  border-color: #f2bcbc;
+  color: var(--bad);
 }

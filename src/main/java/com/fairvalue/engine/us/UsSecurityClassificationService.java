@@ -152,10 +152,10 @@ public class UsSecurityClassificationService {
         if (haystack == null || haystack.isBlank()) {
             return false;
         }
-        String normalized = haystack.toLowerCase(Locale.ROOT);
+        String normalized = normalizeComparable(haystack);
         return keywords.stream()
                 .filter(keyword -> keyword != null && !keyword.isBlank())
-                .map(keyword -> keyword.toLowerCase(Locale.ROOT))
+                .map(this::normalizeComparable)
                 .anyMatch(normalized::contains);
     }
 
@@ -171,12 +171,25 @@ public class UsSecurityClassificationService {
         if (industry == null || industry.isBlank()) {
             return rules.defaultSector();
         }
-        String normalized = industry.toLowerCase(Locale.ROOT);
+        String normalized = normalizeComparable(industry);
         return rules.safeSectorAliases().stream()
-                .filter(alias -> alias.safeKeywords().stream().anyMatch(normalized::contains))
+                .filter(alias -> alias.safeKeywords().stream()
+                        .map(this::normalizeComparable)
+                        .anyMatch(normalized::contains))
                 .map(SectorAlias::sector)
                 .findFirst()
                 .orElse(rules.defaultSector());
+    }
+
+    private String normalizeComparable(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.toLowerCase(Locale.ROOT)
+                .replace("&", "and")
+                .replaceAll("[^a-z0-9]+", " ")
+                .trim()
+                .replaceAll("\\s+", " ");
     }
 
     private String inferExchange(String ticker) {

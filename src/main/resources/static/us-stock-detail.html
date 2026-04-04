@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>股票估值详情 — Fairvalue</title>
+  <title>è‚¡ç¥¨ä¼°å€¼è¯¦æƒ… â€” Fairvalue</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/assets/us-stock-detail.css?v=20260402-review2" />
@@ -14,58 +14,58 @@
   <!-- Loading state shown while initial data loads -->
   <div class="loading-state" id="loading">
     <div class="spinner"></div>
-    <span>加载估值数据…</span>
+    <span>åŠ è½½ä¼°å€¼æ•°æ®â€¦</span>
   </div>
 
   <!-- Main content (hidden until loaded) -->
   <div id="main" style="display:none">
 
-    <!-- ─── Page Header ─────────────────────────────────────────── -->
+    <!-- â”€â”€â”€ Page Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
     <header class="page-header">
-      <a href="/cn-undervalued-stocks.html" class="back-link">← 返回榜单</a>
-      <span class="header-ticker" id="hdr-ticker">—</span>
-      <span class="header-name" id="hdr-name">—</span>
+      <a href="/cn-undervalued-stocks.html" class="back-link">â† è¿”å›žæ¦œå•</a>
+      <span class="header-ticker" id="hdr-ticker">â€”</span>
+      <span class="header-name" id="hdr-name">â€”</span>
       <span class="badge badge-neutral" id="hdr-exchange">US</span>
-      <span class="badge" id="hdr-type">—</span>
+      <span class="badge" id="hdr-type">â€”</span>
       <div class="header-nav">
-        <a class="nav-chip" href="/valuation-screener.html">估值筛选器</a>
+        <a class="nav-chip" href="/valuation-screener.html">ä¼°å€¼ç­›é€‰å™¨</a>
         <a class="nav-chip ghost" href="/us-equities-admin.html">US Admin</a>
       </div>
       <div class="header-actions">
         <button class="btn-run" id="btn-run" onclick="runValuation()">
-          ⟳ 重新估值
+          âŸ³ é‡æ–°ä¼°å€¼
         </button>
       </div>
     </header>
 
-    <!-- ─── Hero Band ─────────────────────────────────────────────── -->
+    <!-- â”€â”€â”€ Hero Band â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
     <section class="hero">
       <div class="hero-grid">
         <!-- Current Price -->
         <div class="hero-metric">
-          <div class="hero-label">当前价格</div>
-          <div class="hero-price" id="hero-price">—</div>
+          <div class="hero-label">å½“å‰ä»·æ ¼</div>
+          <div class="hero-price" id="hero-price">â€”</div>
         </div>
         <!-- Fair Value Range -->
         <div class="hero-metric">
-          <div class="hero-label">公允价值区间（悲观 | 基准 | 乐观）</div>
+          <div class="hero-label">å…¬å…ä»·å€¼åŒºé—´ï¼ˆæ‚²è§‚ | åŸºå‡† | ä¹è§‚ï¼‰</div>
           <div class="fv-range">
-            <span class="fv-low" id="hero-fv-low">—</span>
+            <span class="fv-low" id="hero-fv-low">â€”</span>
             <span class="fv-sep">|</span>
-            <span class="fv-mid" id="hero-fv-mid">—</span>
+            <span class="fv-mid" id="hero-fv-mid">â€”</span>
             <span class="fv-sep">|</span>
-            <span class="fv-high" id="hero-fv-high">—</span>
+            <span class="fv-high" id="hero-fv-high">â€”</span>
           </div>
         </div>
         <!-- Upside -->
         <div class="hero-metric">
-          <div class="hero-label">上行空间</div>
-          <div class="upside-value" id="hero-upside">—</div>
+          <div class="hero-label">ä¸Šè¡Œç©ºé—´</div>
+          <div class="upside-value" id="hero-upside">â€”</div>
         </div>
         <!-- Verdict -->
         <div class="hero-metric">
-          <div class="hero-label">估值判断</div>
-          <div class="verdict-badge" id="hero-verdict">—</div>
+          <div class="hero-label">ä¼°å€¼åˆ¤æ–­</div>
+          <div class="verdict-badge" id="hero-verdict">â€”</div>
         </div>
       </div>
 
@@ -75,104 +75,105 @@
         <!-- Price Zones -->
         <div class="hero-zones">
           <div class="zone-item">
-            <div class="zone-label">买入区间</div>
-            <div class="zone-value zone-buy" id="hero-buy-zone">—</div>
+            <div class="zone-label">ä¹°å…¥åŒºé—´</div>
+            <div class="zone-value zone-buy" id="hero-buy-zone">â€”</div>
           </div>
           <div class="zone-item">
-            <div class="zone-label">持有区间</div>
-            <div class="zone-value zone-hold" id="hero-hold-zone">—</div>
+            <div class="zone-label">æŒæœ‰åŒºé—´</div>
+            <div class="zone-value zone-hold" id="hero-hold-zone">â€”</div>
           </div>
           <div class="zone-item">
-            <div class="zone-label">回避区间</div>
-            <div class="zone-value zone-avoid" id="hero-avoid-zone">—</div>
+            <div class="zone-label">å›žé¿åŒºé—´</div>
+            <div class="zone-value zone-avoid" id="hero-avoid-zone">â€”</div>
           </div>
         </div>
         <!-- Confidence + MoS -->
         <div class="hero-meta">
           <div class="confidence-wrap">
-            <span class="confidence-label">置信度</span>
+            <span class="confidence-label">ç½®ä¿¡åº¦</span>
             <div class="confidence-bar">
               <div class="confidence-fill" id="hero-conf-fill" style="width:0%"></div>
             </div>
-            <span class="confidence-pct" id="hero-conf-pct">—</span>
+            <span class="confidence-pct" id="hero-conf-pct">â€”</span>
           </div>
-          <div class="mos-item">安全边际 <strong id="hero-mos">—</strong></div>
+          <div class="mos-item">å®‰å…¨è¾¹é™… <strong id="hero-mos">â€”</strong></div>
         </div>
       </div>
 
       <!-- Value Trap Warning (hidden unless valueTrapFlag=true) -->
       <div class="value-trap-alert" id="value-trap-alert" style="display:none">
-        ⚠️ Value Trap 警告：高股息 + 收入下滑 + 高负债特征同时存在，建议谨慎
+        âš ï¸ Value Trap è­¦å‘Šï¼šé«˜è‚¡æ¯ + æ”¶å…¥ä¸‹æ»‘ + é«˜è´Ÿå€ºç‰¹å¾åŒæ—¶å­˜åœ¨ï¼Œå»ºè®®è°¨æ…Ž
       </div>
+      <div class="hero-warning-stack" id="hero-warning-stack"></div>
     </section>
 
-    <!-- ─── Tabs ──────────────────────────────────────────────────── -->
+    <!-- â”€â”€â”€ Tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
     <nav class="tab-bar" role="tablist">
-      <button class="tab-btn active" role="tab" onclick="switchTab('overview',this)">概览</button>
-      <button class="tab-btn" role="tab" onclick="switchTab('valuation',this)">估值详情</button>
-      <button class="tab-btn" role="tab" onclick="switchTab('history',this)">历史走势</button>
-      <button class="tab-btn" role="tab" onclick="switchTab('peers',this)">同行对比</button>
-      <button class="tab-btn" role="tab" onclick="switchTab('risk',this)">风险分析</button>
+      <button class="tab-btn active" role="tab" onclick="switchTab('overview',this)">æ¦‚è§ˆ</button>
+      <button class="tab-btn" role="tab" onclick="switchTab('valuation',this)">ä¼°å€¼è¯¦æƒ…</button>
+      <button class="tab-btn" role="tab" onclick="switchTab('history',this)">åŽ†å²èµ°åŠ¿</button>
+      <button class="tab-btn" role="tab" onclick="switchTab('peers',this)">åŒè¡Œå¯¹æ¯”</button>
+      <button class="tab-btn" role="tab" onclick="switchTab('risk',this)">é£Žé™©åˆ†æž</button>
     </nav>
 
-    <!-- ─── Tab: Overview ─────────────────────────────────────────── -->
+    <!-- â”€â”€â”€ Tab: Overview â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
     <div class="tab-pane active" id="tab-overview">
       <div class="card-grid-3">
         <!-- Company Profile -->
         <div class="card">
-          <div class="card-title">公司概况</div>
+          <div class="card-title">å…¬å¸æ¦‚å†µ</div>
           <div class="profile-rows" id="profile-rows">
-            <div class="empty-state">加载中…</div>
+            <div class="empty-state">åŠ è½½ä¸­â€¦</div>
           </div>
         </div>
         <!-- Data Quality -->
         <div class="card">
-          <div class="card-title">数据质量</div>
+          <div class="card-title">æ•°æ®è´¨é‡</div>
           <div id="data-quality-section">
-            <div class="empty-state">加载中…</div>
+            <div class="empty-state">åŠ è½½ä¸­â€¦</div>
           </div>
         </div>
         <!-- Financial Quality -->
         <div class="card">
-          <div class="card-title">财务质量评分</div>
+          <div class="card-title">è´¢åŠ¡è´¨é‡è¯„åˆ†</div>
           <div id="fin-quality-section">
-            <div class="empty-state">加载中…</div>
+            <div class="empty-state">åŠ è½½ä¸­â€¦</div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- ─── Tab: Valuation Detail ─────────────────────────────────── -->
+    <!-- â”€â”€â”€ Tab: Valuation Detail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
     <div class="tab-pane" id="tab-valuation">
 
       <!-- One-line verdict + executive summary -->
       <div class="card" style="margin-bottom:16px" id="exec-summary-card">
-        <div class="card-title">估值摘要</div>
+        <div class="card-title">ä¼°å€¼æ‘˜è¦</div>
         <p id="exec-one-liner" style="font-weight:700;font-size:15px;margin:0 0 8px"></p>
         <p id="exec-summary" style="color:var(--muted);font-size:13px;margin:0;line-height:1.7"></p>
       </div>
 
       <!-- Implied Expectation -->
       <div class="implied-box" id="implied-box" style="display:none">
-        <span class="implied-icon">💡</span>
+        <span class="implied-icon">ðŸ’¡</span>
         <span class="implied-text" id="implied-text"></span>
       </div>
 
       <!-- Method Breakdown -->
-      <div class="section-title">估值方法分解</div>
+      <div class="section-title">ä¼°å€¼æ–¹æ³•åˆ†è§£</div>
       <div class="table-wrap" id="method-table-wrap">
-        <div class="empty-state">加载中…</div>
+        <div class="empty-state">åŠ è½½ä¸­â€¦</div>
       </div>
 
       <!-- Scenario Matrix -->
-      <div class="section-title">情景矩阵</div>
+      <div class="section-title">æƒ…æ™¯çŸ©é˜µ</div>
       <div class="scenario-grid" id="scenario-grid">
-        <div class="empty-state">加载中…</div>
+        <div class="empty-state">åŠ è½½ä¸­â€¦</div>
       </div>
 
       <!-- Source Attribution (collapsible) -->
       <button class="collapse-toggle" id="attr-toggle" onclick="toggleAttr()">
-        <span class="arrow">▶</span> 数据来源归因
+        <span class="arrow">â–¶</span> æ•°æ®æ¥æºå½’å› 
       </button>
       <div class="collapse-body" id="attr-body">
         <div class="attr-grid" id="attr-grid"></div>
@@ -180,48 +181,48 @@
 
     </div>
 
-    <!-- ─── Tab: History ──────────────────────────────────────────── -->
+    <!-- â”€â”€â”€ Tab: History â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
     <div class="tab-pane" id="tab-history">
       <div class="chart-container">
         <div class="chart-legend">
           <div class="legend-item">
-            <div class="legend-line price"></div>收盘价
+            <div class="legend-line price"></div>æ”¶ç›˜ä»·
           </div>
           <div class="legend-item">
-            <div class="legend-line fv"></div>公允价值
+            <div class="legend-line fv"></div>å…¬å…ä»·å€¼
           </div>
         </div>
         <div class="chart-svg-wrap" id="chart-wrap">
-          <div class="empty-state">加载历史数据…</div>
+          <div class="empty-state">åŠ è½½åŽ†å²æ•°æ®â€¦</div>
         </div>
         <div class="chart-note" id="chart-note"></div>
         <div class="chart-tooltip" id="chart-tooltip"></div>
       </div>
     </div>
 
-    <!-- ─── Tab: Peers ────────────────────────────────────────────── -->
+    <!-- â”€â”€â”€ Tab: Peers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
     <div class="tab-pane" id="tab-peers">
       <div class="peers-meta" id="peers-meta">
-        <div class="empty-state">加载同行数据…</div>
+        <div class="empty-state">åŠ è½½åŒè¡Œæ•°æ®â€¦</div>
       </div>
       <div class="table-wrap" id="peers-table-wrap">
-        <div class="empty-state">加载中…</div>
+        <div class="empty-state">åŠ è½½ä¸­â€¦</div>
       </div>
     </div>
 
-    <!-- ─── Tab: Risk ─────────────────────────────────────────────── -->
+    <!-- â”€â”€â”€ Tab: Risk â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
     <div class="tab-pane" id="tab-risk">
 
       <!-- Risk Matrix Table -->
-      <div class="section-title">风险矩阵</div>
+      <div class="section-title">é£Žé™©çŸ©é˜µ</div>
       <div class="table-wrap" id="risk-table-wrap" style="margin-bottom:24px">
-        <div class="empty-state">加载中…</div>
+        <div class="empty-state">åŠ è½½ä¸­â€¦</div>
       </div>
 
       <!-- Explanation Blocks Accordion -->
-      <div class="section-title">估值解释块</div>
+      <div class="section-title">ä¼°å€¼è§£é‡Šå—</div>
       <div class="accordion" id="explanation-accordion">
-        <div class="empty-state">加载中…</div>
+        <div class="empty-state">åŠ è½½ä¸­â€¦</div>
       </div>
 
     </div>
@@ -236,3 +237,4 @@
 <script src="/assets/us-stock-detail.js?v=20260403-platform"></script>
 </body>
 </html>
+

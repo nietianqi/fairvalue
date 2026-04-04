@@ -188,6 +188,15 @@ public class UsValuationPersistenceService {
                 qualityScore,
                 dataQualityScore,
                 snapshot.dataVersion(),
+                summary == null ? null : summary.priceAsOf(),
+                summary == null ? null : summary.priceFreshnessDays(),
+                summary == null ? null : summary.priceSourceType(),
+                summary != null && Boolean.TRUE.equals(summary.rankable()),
+                summary == null ? null : summary.valuationStatus(),
+                summary == null ? null : summary.exclusionReason(),
+                stringFromMap(decision == null ? null : decision.sourceAttribution(), "industryMatchSource", "industry_match_source"),
+                doubleFromMap(decision == null ? null : decision.sourceAttribution(), "industryMatchConfidence", "industry_match_confidence"),
+                booleanFromMap(decision == null ? null : decision.sourceAttribution(), "industryFallbackUsed", "industry_fallback_used"),
                 summary == null ? "{}" : toJson(summary),
                 report == null ? "{}" : toJson(report),
                 decision == null ? "{}" : toJson(decision.sourceAttribution())
@@ -383,6 +392,55 @@ public class UsValuationPersistenceService {
 
     private double safeDouble(BigDecimal value) {
         return value == null ? 0.0 : value.doubleValue();
+    }
+
+    private String stringFromMap(Map<String, Object> source, String... keys) {
+        if (source == null) {
+            return null;
+        }
+        for (String key : keys) {
+            Object value = source.get(key);
+            if (value != null && !value.toString().isBlank()) {
+                return value.toString();
+            }
+        }
+        return null;
+    }
+
+    private Double doubleFromMap(Map<String, Object> source, String... keys) {
+        if (source == null) {
+            return null;
+        }
+        for (String key : keys) {
+            Object value = source.get(key);
+            if (value instanceof Number number) {
+                return number.doubleValue();
+            }
+            if (value != null) {
+                try {
+                    return Double.parseDouble(value.toString());
+                } catch (Exception ignored) {
+                    // continue
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean booleanFromMap(Map<String, Object> source, String... keys) {
+        if (source == null) {
+            return false;
+        }
+        for (String key : keys) {
+            Object value = source.get(key);
+            if (value instanceof Boolean bool) {
+                return bool;
+            }
+            if (value != null) {
+                return Boolean.parseBoolean(value.toString());
+            }
+        }
+        return false;
     }
 
 }

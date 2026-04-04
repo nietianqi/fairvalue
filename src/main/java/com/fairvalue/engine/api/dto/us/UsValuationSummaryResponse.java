@@ -1,5 +1,7 @@
 package com.fairvalue.engine.api.dto.us;
 
+import java.time.LocalDate;
+
 public record UsValuationSummaryResponse(
         String ticker,
         String verdict,
@@ -12,6 +14,12 @@ public record UsValuationSummaryResponse(
         UsFairValueRange avoidZone,
         double currentPrice,
         String dataVersion,
-        String impliedExpectation
+        String impliedExpectation,
+        LocalDate priceAsOf,
+        Integer priceFreshnessDays,
+        String priceSourceType,
+        Boolean rankable,
+        String valuationStatus,
+        String exclusionReason
 ) {
 }

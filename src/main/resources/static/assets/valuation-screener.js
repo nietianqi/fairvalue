@@ -608,6 +608,8 @@ function renderCell(key, item) {
         ? `/us-stock-detail.html?ticker=${encodeURIComponent(sym)}`
         : mkt === 'CN'
         ? `/cn-stock-detail.html?ticker=${encodeURIComponent(sym)}`
+        : mkt === 'JP'
+        ? `/jp-stock-detail.html?code=${encodeURIComponent(sym)}`
         : '#';
       return td(`<div class="co-cell">
         <div class="ticker-avatar" style="background:${col}">${esc(abbr)}</div>

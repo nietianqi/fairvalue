@@ -676,7 +676,18 @@ class UsEquityAdminControllerTest {
                 .andExpect(jsonPath("$.ranking_mode").exists())
                 .andExpect(jsonPath("$.strict_ready").exists())
                 .andExpect(jsonPath("$.snapshot_coverage").exists())
-                .andExpect(jsonPath("$.rankable_count").exists());
+                .andExpect(jsonPath("$.rankable_count").exists())
+                .andExpect(jsonPath("$.excluded_stale_price_count").exists())
+                .andExpect(jsonPath("$.excluded_bad_industry_match_count").exists())
+                .andExpect(jsonPath("$.excluded_low_confidence_count").exists());
+
+        mockMvc.perform(get("/v1/us-equities-admin/AAPL/valuation-diagnostics"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ticker").value("AAPL"))
+                .andExpect(jsonPath("$.rankable").exists())
+                .andExpect(jsonPath("$.company_type").exists())
+                .andExpect(jsonPath("$.industry_fallback_used").exists())
+                .andExpect(jsonPath("$.dcf_outlier_trimmed").exists());
 
         mockMvc.perform(get("/v1/us-equities-admin/valuation-jobs/dead-letter"))
                 .andExpect(status().isOk())

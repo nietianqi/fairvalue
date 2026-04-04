@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const tickerInput = document.getElementById('tickerInput');
 const statusBox = document.getElementById('statusBox');
@@ -25,6 +25,7 @@ const standardizedTable = document.getElementById('standardizedTable');
 const derivedTable = document.getElementById('derivedTable');
 const qualityTable = document.getElementById('qualityTable');
 const auditTable = document.getElementById('auditTable');
+const diagnosticsTable = document.getElementById('diagnosticsTable');
 const buttons = [...document.querySelectorAll('button')];
 
 const countRefs = {
@@ -49,6 +50,7 @@ const state = {
   rankingCoverage: null,
   platformMe: null,
   platformUsage: null,
+  diagnostics: null,
   jobSummary: null,
   tickerJobs: [],
   globalJobs: [],
@@ -117,8 +119,8 @@ async function loadDashboard() {
   const symbol = ticker();
   syncDetailLink();
   setBusy(true);
-  setStatus(`正在加载 ${symbol} 的后台概览...`);
-  heroStatus.textContent = `正在刷新 ${symbol}`;
+  setStatus(`æ­£åœ¨åŠ è½½ ${symbol} çš„åŽå°æ¦‚è§ˆ...`);
+  heroStatus.textContent = `æ­£åœ¨åˆ·æ–° ${symbol}`;
 
   const requests = await Promise.allSettled([
     fetchJson(`/v1/us-equities-admin/${symbol}/overview`),
@@ -127,11 +129,12 @@ async function loadDashboard() {
     fetchJson('/v1/us-equities-admin/valuation-jobs?limit=8'),
     fetchJson('/v1/us-equities-admin/valuation-alerts'),
     fetchJson('/v1/us-equities-admin/ranking-coverage'),
+    fetchJson(`/v1/us-equities-admin/${symbol}/valuation-diagnostics`),
     fetchJson('/v1/platform/me'),
     fetchJson('/v1/platform/usage'),
   ]);
 
-  const [overviewRes, summaryRes, tickerJobsRes, globalJobsRes, alertsRes, rankingCoverageRes, platformMeRes, platformUsageRes] = requests;
+  const [overviewRes, summaryRes, tickerJobsRes, globalJobsRes, alertsRes, rankingCoverageRes, diagnosticsRes, platformMeRes, platformUsageRes] = requests;
 
   if (overviewRes.status === 'fulfilled') {
     state.overview = overviewRes.value;
@@ -166,17 +169,24 @@ async function loadDashboard() {
     renderRankingCoverage(null);
   }
 
+  if (diagnosticsRes.status === 'fulfilled') {
+    state.diagnostics = diagnosticsRes.value;
+    renderDiagnostics(diagnosticsRes.value);
+  } else {
+    renderDiagnostics(null);
+  }
+
   state.platformMe = platformMeRes.status === 'fulfilled' ? platformMeRes.value : null;
   state.platformUsage = platformUsageRes.status === 'fulfilled' ? platformUsageRes.value : null;
   renderPlatformSummary(state.platformMe, state.platformUsage);
 
   const failed = requests.filter(item => item.status === 'rejected');
   if (failed.length) {
-    setStatus(`加载完成，但有 ${failed.length} 项子请求失败。`, true);
+    setStatus(`åŠ è½½å®Œæˆï¼Œä½†æœ‰ ${failed.length} é¡¹å­è¯·æ±‚å¤±è´¥ã€‚`, true);
   } else {
-    setStatus(`已加载 ${symbol} 的后台概览。`);
+    setStatus(`å·²åŠ è½½ ${symbol} çš„åŽå°æ¦‚è§ˆã€‚`);
   }
-  heroStatus.textContent = `最近刷新：${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
+  heroStatus.textContent = `æœ€è¿‘åˆ·æ–°ï¼š${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
   setBusy(false);
 
   fetchJson(`/v1/us-equities-admin/${symbol}/source-status`)
@@ -192,13 +202,13 @@ async function loadDashboard() {
 async function runAction(url, options = {}) {
   const method = options.method || 'GET';
   setBusy(true);
-  setStatus(`请求中：${method} ${url}`);
-  heroStatus.textContent = `正在执行 ${method}`;
+  setStatus(`è¯·æ±‚ä¸­ï¼š${method} ${url}`);
+  heroStatus.textContent = `æ­£åœ¨æ‰§è¡Œ ${method}`;
   try {
     const payload = await fetchJson(url, { method });
     renderJson(payload);
-    setStatus(`完成：${method} ${url}`);
-    heroStatus.textContent = `刚完成：${method} ${ticker()}`;
+    setStatus(`å®Œæˆï¼š${method} ${url}`);
+    heroStatus.textContent = `åˆšå®Œæˆï¼š${method} ${ticker()}`;
     if ((options.refresh || []).includes('all')) {
       await loadDashboard();
     } else {
@@ -219,8 +229,8 @@ async function runAction(url, options = {}) {
     return payload;
   } catch (error) {
     renderJson({ error: error.message || 'unknown_error' });
-    setStatus(error.message || '请求失败', true);
-    heroStatus.textContent = '最近操作失败';
+    setStatus(error.message || 'è¯·æ±‚å¤±è´¥', true);
+    heroStatus.textContent = 'æœ€è¿‘æ“ä½œå¤±è´¥';
     throw error;
   } finally {
     setBusy(false);
@@ -257,13 +267,13 @@ function unwrapApiEnvelope(payload) {
 function renderOverview(payload) {
   if (!payload) {
     Object.values(countRefs).forEach((el) => { if (el) el.textContent = '-'; });
-    classificationLine.textContent = '分类：加载失败';
-    renderEmptyTable(documentsTable, '暂无 overview 数据');
-    renderEmptyTable(rawFactsTable, '暂无 overview 数据');
-    renderEmptyTable(standardizedTable, '暂无 overview 数据');
-    renderEmptyTable(derivedTable, '暂无 overview 数据');
-    renderEmptyTable(qualityTable, '暂无 overview 数据');
-    renderEmptyTable(auditTable, '暂无 overview 数据');
+    classificationLine.textContent = 'åˆ†ç±»ï¼šåŠ è½½å¤±è´¥';
+    renderEmptyTable(documentsTable, 'æš‚æ—  overview æ•°æ®');
+    renderEmptyTable(rawFactsTable, 'æš‚æ—  overview æ•°æ®');
+    renderEmptyTable(standardizedTable, 'æš‚æ—  overview æ•°æ®');
+    renderEmptyTable(derivedTable, 'æš‚æ—  overview æ•°æ®');
+    renderEmptyTable(qualityTable, 'æš‚æ—  overview æ•°æ®');
+    renderEmptyTable(auditTable, 'æš‚æ—  overview æ•°æ®');
     return;
   }
 
@@ -280,7 +290,7 @@ function renderOverview(payload) {
   setCount('latestSnapshotFlag', payload.latest_valuation_snapshot_present ? 'YES' : 'NO');
   setCount('valuationJobCount', payload.valuation_job_count);
 
-  classificationLine.textContent = `分类：${safe(payload.company_type)} | 模板：${safe(payload.sector_template)} | 行业：${safe(payload.industry)} | 公司：${safe(payload.company_name)}`;
+  classificationLine.textContent = `åˆ†ç±»ï¼š${safe(payload.company_type)} | æ¨¡æ¿ï¼š${safe(payload.sector_template)} | è¡Œä¸šï¼š${safe(payload.industry)} | å…¬å¸ï¼š${safe(payload.company_name)}`;
 
   renderTable(documentsTable,
     [
@@ -359,8 +369,8 @@ function renderOverview(payload) {
 
 function renderSourceStatus(payload, error) {
   if (!payload) {
-    sourceAsOf.textContent = error ? '加载失败' : '-';
-    sourceCards.innerHTML = '<div class="table-shell empty">暂时拿不到 source-status，我们稍后再试。</div>';
+    sourceAsOf.textContent = error ? 'åŠ è½½å¤±è´¥' : '-';
+    sourceCards.innerHTML = '<div class="table-shell empty">æš‚æ—¶æ‹¿ä¸åˆ° source-statusï¼Œæˆ‘ä»¬ç¨åŽå†è¯•ã€‚</div>';
     return;
   }
 
@@ -397,6 +407,9 @@ function renderRankingCoverage(payload) {
       miniCard('Snapshots', '-'),
       miniCard('Rankable', '-'),
       miniCard('Coverage', '-'),
+      miniCard('Excluded Stale', '-'),
+      miniCard('Excluded Industry', '-'),
+      miniCard('Excluded Confidence', '-'),
     ].join('');
     return;
   }
@@ -409,13 +422,73 @@ function renderRankingCoverage(payload) {
     miniCard('Snapshots', payload.snapshot_count),
     miniCard('Rankable', payload.rankable_count),
     miniCard('Coverage', `${formatPercent(payload.snapshot_coverage)} / ${formatPercent(payload.rankable_coverage)}`),
+    miniCard('Excluded Stale', payload.excluded_stale_price_count),
+    miniCard('Excluded Industry', payload.excluded_bad_industry_match_count),
+    miniCard('Excluded Confidence', payload.excluded_low_confidence_count),
   ].join('');
+}
+
+function renderDiagnostics(payload) {
+  if (!diagnosticsTable) return;
+  if (!payload) {
+    renderEmptyTable(diagnosticsTable, '暂时拿不到 valuation diagnostics。');
+    return;
+  }
+
+  const rows = [
+    ['priceSource', '价格来源'],
+    ['priceAsOf', '价格日期'],
+    ['priceFreshnessDays', '价格鲜度'],
+    ['priceSourceType', '价格类型'],
+    ['rankable', '可排名'],
+    ['valuationStatus', '估值状态'],
+    ['exclusionReason', '排除原因'],
+    ['industryMatchSource', '行业匹配来源'],
+    ['industryMatchConfidence', '行业匹配置信'],
+    ['industryFallbackUsed', '行业回退'],
+    ['peerSelectionMode', 'Peer 模式'],
+    ['peerSetTickers', 'Peer Tickers'],
+    ['dcfMethodStatus', 'DCF 状态'],
+    ['dcfWeight', 'DCF 权重'],
+    ['dcfOutlierTrimmed', 'DCF 剪裁'],
+    ['dcfWeightAdjustedByDataQuality', 'DCF 调权'],
+  ].map(([key, label]) => ({
+    metric: label,
+    value: formatDiagnosticValue(key, payload[key]),
+  }));
+
+  renderTable(
+    diagnosticsTable,
+    [
+      ['metric', '诊断项'],
+      ['value', '当前值'],
+    ],
+    rows,
+    (row, key) => safe(row[key])
+  );
+}
+
+function formatDiagnosticValue(key, value) {
+  if (value == null || value === '') return '-';
+  if (Array.isArray(value)) {
+    return value.length ? value.join(', ') : '-';
+  }
+  if (typeof value === 'boolean') {
+    return value ? 'YES' : 'NO';
+  }
+  if (key === 'industryMatchConfidence' || key === 'dcfWeight') {
+    return formatPercent(value);
+  }
+  if (key === 'priceFreshnessDays') {
+    return `${value}d`;
+  }
+  return safe(value);
 }
 
 function renderAlerts(payload) {
   if (!payload) {
-    alertsAsOf.textContent = '加载失败';
-    alertCards.innerHTML = '<div class="table-shell empty">暂时拿不到 valuation alerts，我们稍后再试。</div>';
+    alertsAsOf.textContent = 'åŠ è½½å¤±è´¥';
+    alertCards.innerHTML = '<div class="table-shell empty">æš‚æ—¶æ‹¿ä¸åˆ° valuation alertsï¼Œæˆ‘ä»¬ç¨åŽå†è¯•ã€‚</div>';
     return;
   }
 
@@ -461,9 +534,71 @@ function renderAlerts(payload) {
   }).join('');
 }
 
+
+function renderDiagnostics(payload) {
+  if (!diagnosticsTable) return;
+  if (!payload) {
+    renderEmptyTable(diagnosticsTable, '暂时拿不到 valuation diagnostics。');
+    return;
+  }
+
+  const rows = [
+    ['priceSource', '价格来源'],
+    ['priceAsOf', '价格日期'],
+    ['priceFreshnessDays', '价格鲜度'],
+    ['priceSourceType', '价格类型'],
+    ['rankable', '可排名'],
+    ['valuationStatus', '估值状态'],
+    ['exclusionReason', '排除原因'],
+    ['industryMatchSource', '行业匹配来源'],
+    ['industryMatchConfidence', '行业匹配置信'],
+    ['industryFallbackUsed', '行业回退'],
+    ['peerSelectionMode', 'Peer 模式'],
+    ['peerSetTickers', 'Peer Tickers'],
+    ['dcfMethodStatus', 'DCF 状态'],
+    ['dcfWeight', 'DCF 权重'],
+    ['dcfOutlierTrimmed', 'DCF 剪裁'],
+    ['dcfWeightAdjustedByDataQuality', 'DCF 调权'],
+  ].map(([key, label]) => ({ key, label, value: payload[key] }));
+
+  const formattedRows = rows.map((row) => ({
+    metric: row.label,
+    value: formatDiagnosticValue(row.key, row.value),
+  }));
+
+  renderTable(
+    diagnosticsTable,
+    [
+      ['metric', '诊断项'],
+      ['value', '当前值'],
+    ],
+    formattedRows,
+    (item, key) => safe(item[key])
+  );
+}
+
+function formatDiagnosticValue(key, value) {
+  if (value == null || value === '') return '-';
+  if (Array.isArray(value)) {
+    return value.length ? value.join(', ') : '-';
+  }
+  if (typeof value === 'boolean') {
+    return value ? 'YES' : 'NO';
+  }
+  if (key === 'priceAsOf') {
+    return safe(value);
+  }
+  if (key === 'industryMatchConfidence' || key === 'dcfWeight') {
+    return formatPercent(value);
+  }
+  if (key === 'priceFreshnessDays') {
+    return `${value}d`;
+  }
+  return safe(value);
+}
 function renderPlatformSummary(me, usage) {
   if (!me || !usage) {
-    platformPlan.textContent = '加载失败';
+    platformPlan.textContent = 'åŠ è½½å¤±è´¥';
     platformCards.innerHTML = [
       miniCard('RPM', '-'),
       miniCard('Today', '-'),
@@ -473,7 +608,7 @@ function renderPlatformSummary(me, usage) {
     return;
   }
 
-  platformPlan.textContent = `${safe(me.plan_code)} · ${safe(me.client_name)}`;
+  platformPlan.textContent = `${safe(me.plan_code)} Â· ${safe(me.client_name)}`;
   platformCards.innerHTML = [
     miniCard('RPM', me.requests_per_minute),
     miniCard('Today', usage.total_requests),
@@ -496,8 +631,8 @@ function renderJobSummary(payload) {
 }
 
 function renderJobsTables(tickerJobs, globalJobs) {
-  tickerJobsMeta.textContent = `${ticker()} 最近 ${tickerJobs.length} 条`;
-  globalJobsMeta.textContent = `全局最近 ${globalJobs.length} 条`;
+  tickerJobsMeta.textContent = `${ticker()} æœ€è¿‘ ${tickerJobs.length} æ¡`;
+  globalJobsMeta.textContent = `å…¨å±€æœ€è¿‘ ${globalJobs.length} æ¡`;
 
   renderTable(tickerJobsTable,
     [
@@ -526,7 +661,7 @@ function renderJobsTables(tickerJobs, globalJobs) {
 
 function renderTable(container, columns, rows, cellFormatter) {
   if (!rows || !rows.length) {
-    renderEmptyTable(container, '暂无数据');
+    renderEmptyTable(container, 'æš‚æ— æ•°æ®');
     return;
   }
   const head = columns.map(([, label]) => `<th>${escapeHtml(label)}</th>`).join('');
@@ -609,7 +744,7 @@ function sourceMetaFred(item) {
     metaLine('Enabled', booleanLabel(item.enabled)),
     metaLine('API Key', booleanLabel(item.api_key_present)),
     metaLine('Detail', item.detail || '-'),
-    metaLine('Risk-free', item.risk_free_observation ? `${formatPercent(item.risk_free_observation.value)} · ${safe(item.risk_free_observation.date)}` : '-'),
+    metaLine('Risk-free', item.risk_free_observation ? `${formatPercent(item.risk_free_observation.value)} Â· ${safe(item.risk_free_observation.date)}` : '-'),
   ].join('');
 }
 
@@ -639,7 +774,7 @@ function sourceMetaSimfin(item) {
     metaLine('API Key', booleanLabel(item.api_key_present)),
     metaLine('Authenticated', booleanLabel(item.authenticated)),
     metaLine('Detail', item.detail || '-'),
-    metaLine('Company', company.simfin_id ? `${safe(company.simfin_id)} · ${safe(company.main_currency)}` : '-'),
+    metaLine('Company', company.simfin_id ? `${safe(company.simfin_id)} Â· ${safe(company.main_currency)}` : '-'),
   ].join('');
 }
 
@@ -697,3 +832,4 @@ function escapeHtml(value) {
     .replace(/\"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+

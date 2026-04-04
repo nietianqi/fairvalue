@@ -1,6 +1,7 @@
 package com.fairvalue.engine.us;
 
 import java.time.Instant;
+import java.time.LocalDate;
 
 public record UsStoredValuationSnapshotRecord(
         long securityId,
@@ -22,6 +23,15 @@ public record UsStoredValuationSnapshotRecord(
         Double qualityScore,
         Double dataQualityScore,
         String dataVersion,
+        LocalDate priceAsOf,
+        Integer priceFreshnessDays,
+        String priceSourceType,
+        boolean rankable,
+        String valuationStatus,
+        String exclusionReason,
+        String industryMatchSource,
+        Double industryMatchConfidence,
+        boolean industryFallbackUsed,
         String summaryJson,
         String reportJson,
         String sourceAttributionJson

@@ -6,6 +6,9 @@ public record UsMethodOutput(
         double baseValue,
         double bullValue,
         double weight,
-        String rationale
+        String rationale,
+        String methodStatus,
+        boolean outlierTrimmed,
+        boolean weightAdjustedByDataQuality
 ) {
 }

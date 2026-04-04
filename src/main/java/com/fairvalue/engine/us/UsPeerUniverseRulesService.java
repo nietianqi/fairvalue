@@ -130,6 +130,30 @@ public class UsPeerUniverseRulesService {
                 14.0,
                 2.5
         ));
+        values.put("managed_care", new UsPeerUniverseRuleProfile(
+                "managed_care",
+                RULE_VERSION,
+                List.of("industry", "sector_template", "company_type", "sector"),
+                List.of("market_cap", "revenue_growth", "fcf_margin", "pe", "usable_multiple"),
+                8,
+                3,
+                0.02,
+                -1.0,
+                0.25,
+                5.5,
+                0.10,
+                0.10,
+                null,
+                8.0,
+                null,
+                0.18,
+                8.0,
+                0.14,
+                0.14,
+                null,
+                10.0,
+                null
+        ));
         values.put("bank", new UsPeerUniverseRuleProfile(
                 "bank",
                 RULE_VERSION,
@@ -257,6 +281,7 @@ public class UsPeerUniverseRulesService {
         values.put("us_reit", values.get("reit"));
         values.put("us_biotech", values.get("biotech"));
         values.put("us_cyclical", values.get("cyclical"));
+        values.put("us_managed_care", values.get("managed_care"));
         values.put("us_general_quality", values.get("default"));
         return values;
     }

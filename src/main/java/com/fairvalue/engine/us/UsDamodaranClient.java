@@ -118,30 +118,34 @@ public class UsDamodaranClient {
             String securitySector
     ) {
         try {
-            List<String> candidates = industryCandidates(sectorTemplate, securityIndustry, securitySector);
-            IndustryMetric beta = loadIndustryMetric(properties.getBetaUrl(), "Beta", candidates, false);
-            IndustryMetric trailingPe = loadIndustryMetric(properties.getPeUrl(), "Trailing PE", candidates, false);
-            IndustryMetric evEbitda = loadIndustryMetric(properties.getEvEbitdaUrl(), "EV/EBITDA", candidates, false);
+            IndustryMatchPlan matchPlan = industryCandidates(sectorTemplate, securityIndustry, securitySector);
+            IndustryMetricMatch beta = loadIndustryMetric(properties.getBetaUrl(), "Beta", matchPlan, false);
+            IndustryMetricMatch trailingPe = loadIndustryMetric(properties.getPeUrl(), "Trailing PE", matchPlan, false);
+            IndustryMetricMatch evEbitda = loadIndustryMetric(properties.getEvEbitdaUrl(), "EV/EBITDA", matchPlan, false);
 
             if (beta == null && trailingPe == null && evEbitda == null) {
                 return Optional.empty();
             }
 
             String matchedIndustry = firstNonBlank(
-                    beta == null ? null : beta.industryName(),
-                    trailingPe == null ? null : trailingPe.industryName(),
-                    evEbitda == null ? null : evEbitda.industryName()
+                    beta == null ? null : beta.metric().industryName(),
+                    trailingPe == null ? null : trailingPe.metric().industryName(),
+                    evEbitda == null ? null : evEbitda.metric().industryName()
             );
+            IndustryMetricMatch effectiveMatch = firstNonNull(beta, trailingPe, evEbitda);
 
             return Optional.of(new DamodaranIndustrySnapshot(
                     matchedIndustry,
-                    beta == null ? null : beta.value(),
-                    trailingPe == null ? null : trailingPe.value(),
-                    evEbitda == null ? null : evEbitda.value(),
+                    beta == null ? null : beta.metric().value(),
+                    trailingPe == null ? null : trailingPe.metric().value(),
+                    evEbitda == null ? null : evEbitda.metric().value(),
+                    effectiveMatch == null ? null : effectiveMatch.matchSource(),
+                    effectiveMatch == null ? null : effectiveMatch.matchConfidence(),
+                    effectiveMatch != null && effectiveMatch.fallbackUsed(),
                     List.of(
-                            beta == null ? null : beta.sourceLabel(),
-                            trailingPe == null ? null : trailingPe.sourceLabel(),
-                            evEbitda == null ? null : evEbitda.sourceLabel()
+                            beta == null ? null : beta.metric().sourceLabel(),
+                            trailingPe == null ? null : trailingPe.metric().sourceLabel(),
+                            evEbitda == null ? null : evEbitda.metric().sourceLabel()
                     ).stream().filter(value -> value != null && !value.isBlank()).distinct().toList()
             ));
         } catch (Exception ignored) {
@@ -149,10 +153,10 @@ public class UsDamodaranClient {
         }
     }
 
-    private IndustryMetric loadIndustryMetric(
+    private IndustryMetricMatch loadIndustryMetric(
             String url,
             String targetHeader,
-            List<String> candidates,
+            IndustryMatchPlan matchPlan,
             boolean percent
     ) throws Exception {
         Document document = loadDocument(url);
@@ -187,57 +191,91 @@ public class UsDamodaranClient {
             metrics.add(new IndustryMetric(industry, value, sourceLabel(targetHeader)));
         }
 
-        return bestIndustryMatch(metrics, candidates).orElse(null);
+        return bestIndustryMatch(metrics, matchPlan).orElse(null);
     }
 
-    private Optional<IndustryMetric> bestIndustryMatch(List<IndustryMetric> metrics, List<String> candidates) {
+    private Optional<IndustryMetricMatch> bestIndustryMatch(List<IndustryMetric> metrics, IndustryMatchPlan matchPlan) {
         if (metrics.isEmpty()) {
             return Optional.empty();
         }
-        if (candidates == null || candidates.isEmpty()) {
-            return Optional.of(metrics.get(0));
+        if (matchPlan == null || matchPlan.groups().isEmpty()) {
+            return Optional.empty();
         }
-        for (String candidate : candidates) {
+        for (CandidateGroup group : matchPlan.groups()) {
+            IndustryMetricMatch exact = findExact(metrics, group);
+            if (exact != null) {
+                return Optional.of(exact);
+            }
+        }
+        for (CandidateGroup group : matchPlan.groups()) {
+            IndustryMetricMatch contains = findContains(metrics, group);
+            if (contains != null) {
+                return Optional.of(contains);
+            }
+        }
+        return Optional.empty();
+    }
+
+    private IndustryMetricMatch findExact(List<IndustryMetric> metrics, CandidateGroup group) {
+        for (String candidate : group.aliases()) {
             String normalizedCandidate = normalizeComparable(candidate);
             for (IndustryMetric metric : metrics) {
                 if (normalizeComparable(metric.industryName()).equals(normalizedCandidate)) {
-                    return Optional.of(metric);
+                    return new IndustryMetricMatch(metric, group.matchSource(), group.matchConfidence(), group.fallbackUsed());
                 }
             }
         }
-        for (String candidate : candidates) {
-            String normalizedCandidate = normalizeComparable(candidate);
-            for (IndustryMetric metric : metrics) {
-                if (normalizeComparable(metric.industryName()).contains(normalizedCandidate)
-                        || normalizedCandidate.contains(normalizeComparable(metric.industryName()))) {
-                    return Optional.of(metric);
-                }
-            }
-        }
-        return metrics.stream()
-                .min(Comparator.comparing(metric -> scoreIndustryMatch(metric.industryName(), candidates)));
+        return null;
     }
 
-    private int scoreIndustryMatch(String industryName, List<String> candidates) {
-        String normalizedIndustry = normalizeComparable(industryName);
-        int best = Integer.MAX_VALUE;
-        for (String candidate : candidates) {
+    private IndustryMetricMatch findContains(List<IndustryMetric> metrics, CandidateGroup group) {
+        for (String candidate : group.aliases()) {
             String normalizedCandidate = normalizeComparable(candidate);
             if (normalizedCandidate.isBlank()) {
                 continue;
             }
-            if (normalizedIndustry.contains(normalizedCandidate) || normalizedCandidate.contains(normalizedIndustry)) {
-                best = Math.min(best, Math.abs(normalizedIndustry.length() - normalizedCandidate.length()));
+            for (IndustryMetric metric : metrics) {
+                String normalizedIndustry = normalizeComparable(metric.industryName());
+                if (normalizedIndustry.contains(normalizedCandidate) || normalizedCandidate.contains(normalizedIndustry)) {
+                    return new IndustryMetricMatch(metric, group.matchSource(), group.matchConfidence(), group.fallbackUsed());
+                }
             }
         }
-        return best;
+        return null;
     }
 
-    private List<String> industryCandidates(String sectorTemplate, String securityIndustry, String securitySector) {
+    private IndustryMatchPlan industryCandidates(String sectorTemplate, String securityIndustry, String securitySector) {
         List<String> candidates = new ArrayList<>();
+        List<CandidateGroup> groups = new ArrayList<>();
         String industry = normalizeComparable(securityIndustry);
         String sector = normalizeComparable(securitySector);
         String template = normalizeComparable(sectorTemplate);
+
+        if (industry.contains("managed care")
+                || industry.contains("health plan")
+                || industry.contains("medical service plan")
+                || industry.contains("hospital and medical service plan")
+                || template.contains("managed care")
+                || template.contains("managed_care")) {
+            groups.add(new CandidateGroup(
+                    "damodaran_alias_primary",
+                    0.95,
+                    false,
+                    List.of("Healthcare Support Services")
+            ));
+            groups.add(new CandidateGroup(
+                    "damodaran_alias_secondary",
+                    0.75,
+                    true,
+                    List.of("Hospitals/Healthcare Facilities")
+            ));
+            groups.add(new CandidateGroup(
+                    "damodaran_alias_fallback",
+                    0.55,
+                    true,
+                    List.of("Insurance (General)")
+            ));
+        }
 
         if (industry.contains("semiconductor")) {
             candidates.add("Semiconductor");
@@ -276,10 +314,19 @@ public class UsDamodaranClient {
         }
 
         candidates.add(firstNonBlank(securityIndustry, securitySector, sectorTemplate));
-        return candidates.stream()
+        List<String> distinctCandidates = candidates.stream()
                 .filter(value -> value != null && !value.isBlank())
                 .distinct()
                 .toList();
+        if (!distinctCandidates.isEmpty()) {
+            groups.add(new CandidateGroup(
+                    "security_industry",
+                    groups.isEmpty() ? 0.80 : 0.65,
+                    !groups.isEmpty(),
+                    distinctCandidates
+            ));
+        }
+        return new IndustryMatchPlan(groups);
     }
 
     private Document loadDocument(String url) throws Exception {
@@ -405,6 +452,27 @@ public class UsDamodaranClient {
     ) {
     }
 
+    private record IndustryMetricMatch(
+            IndustryMetric metric,
+            String matchSource,
+            double matchConfidence,
+            boolean fallbackUsed
+    ) {
+    }
+
+    private record IndustryMatchPlan(
+            List<CandidateGroup> groups
+    ) {
+    }
+
+    private record CandidateGroup(
+            String matchSource,
+            double matchConfidence,
+            boolean fallbackUsed,
+            List<String> aliases
+    ) {
+    }
+
     @FunctionalInterface
     private interface SupplierWithException<T> {
         T get() throws Exception;
@@ -423,7 +491,38 @@ public class UsDamodaranClient {
             Double beta,
             Double trailingPe,
             Double evEbitda,
+            String matchSource,
+            Double matchConfidence,
+            boolean fallbackUsed,
             List<String> sourceLabels
     ) {
+        public DamodaranIndustrySnapshot(
+                String matchedIndustry,
+                Double beta,
+                Double trailingPe,
+                Double evEbitda,
+                List<String> sourceLabels
+        ) {
+            this(
+                    matchedIndustry,
+                    beta,
+                    trailingPe,
+                    evEbitda,
+                    "legacy_fixture",
+                    1.0,
+                    false,
+                    sourceLabels
+            );
+        }
+    }
+
+    @SafeVarargs
+    private final <T> T firstNonNull(T... values) {
+        for (T value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
     }
 }

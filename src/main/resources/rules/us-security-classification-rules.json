@@ -34,6 +34,14 @@
   ],
   "rules": [
     {
+      "id": "managed_care",
+      "priority": 108,
+      "company_type": "managed_care",
+      "sector_template": "us_managed_care",
+      "industry_keywords": ["managed care", "health plans", "medical service plans", "health benefits", "healthcare support services", "insurance health", "insurance health and life", "hospital and medical service plans"],
+      "sector_keywords": ["healthcare", "health"]
+    },
+    {
       "id": "reit",
       "priority": 110,
       "company_type": "reit",
