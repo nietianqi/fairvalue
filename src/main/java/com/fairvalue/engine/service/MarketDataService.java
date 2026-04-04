@@ -4,10 +4,17 @@ import com.fairvalue.engine.cn.CnEastmoneyClient;
 import com.fairvalue.engine.domain.Market;
 import com.fairvalue.engine.domain.StockFundamentals;
 import com.fairvalue.engine.domain.StockSnapshot;
+import com.fairvalue.engine.repository.MarketPriceDailyRepository;
+import com.fairvalue.engine.repository.MarketSnapshotRepository;
 import com.fairvalue.engine.us.UsLongbridgeClient;
 import com.fairvalue.engine.us.UsMarketDataPersistenceService;
+import com.fairvalue.engine.us.UsMarketPriceDailyRecord;
+import com.fairvalue.engine.us.UsMarketSnapshotRecord;
 import com.fairvalue.engine.us.UsSecClient;
+import com.fairvalue.engine.us.UsSecurityMasterService;
 import com.fairvalue.engine.us.UsStooqClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -22,25 +29,36 @@ import java.util.Map;
 
 @Service
 public class MarketDataService {
+    private static final Logger log = LoggerFactory.getLogger(MarketDataService.class);
+
     private final Map<Market, Map<String, StockSnapshot>> data;
     private final CnEastmoneyClient cnEastmoneyClient;
     private final UsLongbridgeClient usLongbridgeClient;
     private final UsStooqClient usStooqClient;
     private final UsSecClient usSecClient;
     private final UsMarketDataPersistenceService usMarketDataPersistenceService;
+    private final UsSecurityMasterService usSecurityMasterService;
+    private final MarketPriceDailyRepository marketPriceDailyRepository;
+    private final MarketSnapshotRepository marketSnapshotRepository;
 
     public MarketDataService(
             CnEastmoneyClient cnEastmoneyClient,
             UsLongbridgeClient usLongbridgeClient,
             UsStooqClient usStooqClient,
             UsSecClient usSecClient,
-            UsMarketDataPersistenceService usMarketDataPersistenceService
+            UsMarketDataPersistenceService usMarketDataPersistenceService,
+            UsSecurityMasterService usSecurityMasterService,
+            MarketPriceDailyRepository marketPriceDailyRepository,
+            MarketSnapshotRepository marketSnapshotRepository
     ) {
         this.cnEastmoneyClient = cnEastmoneyClient;
         this.usLongbridgeClient = usLongbridgeClient;
         this.usStooqClient = usStooqClient;
         this.usSecClient = usSecClient;
         this.usMarketDataPersistenceService = usMarketDataPersistenceService;
+        this.usSecurityMasterService = usSecurityMasterService;
+        this.marketPriceDailyRepository = marketPriceDailyRepository;
+        this.marketSnapshotRepository = marketSnapshotRepository;
         this.data = new EnumMap<>(Market.class);
         seed();
     }
@@ -62,6 +80,11 @@ public class MarketDataService {
             UsLongbridgeClient.UsLongbridgeMarketData longbridge = usLongbridgeClient.fetchMarketData(normalized).orElse(null);
             UsStooqClient.UsQuote quote = usStooqClient.fetchQuote(normalized).orElse(null);
             UsSecClient.UsSecProfile profile = usSecClient.fetchProfile(normalized).orElse(null);
+            // When stooq is rate-limited/unavailable, substitute a DB-cached quote so that
+            // mergeUsSnapshot uses a real recent price instead of the stale 2026Q1 seed.
+            if (quote == null && longbridge == null) {
+                quote = tryLoadDbQuote(normalized);
+            }
             if (longbridge != null || quote != null || profile != null) {
                 StockSnapshot merged = mergeUsSnapshot(fallback, longbridge, quote, profile);
                 if (longbridge != null) {
@@ -71,6 +94,8 @@ public class MarketDataService {
                 }
                 return merged;
             }
+            // All live sources failed and no DB data — last resort: stale seed
+            log.warn("[price-fallback] {} no live or DB prices available, using stale seed {}", normalized, fallback.dataVersion());
             return fallback;
         }
 
@@ -78,6 +103,57 @@ public class MarketDataService {
             return template;
         }
         return syntheticSnapshot(market, normalized);
+    }
+
+    /**
+     * When Stooq is rate-limited/unavailable, synthesise a UsQuote from the most recent price
+     * stored in DB (market_snapshot preferred, then market_price_daily).
+     * Returns null if no suitable DB price exists, so callers can continue their own fallback chain.
+     */
+    private UsStooqClient.UsQuote tryLoadDbQuote(String ticker) {
+        try {
+            var sm = usSecurityMasterService.findByTicker(ticker);
+            if (sm.isEmpty()) return null;
+            long securityId = sm.get().id();
+
+            // 1. Try market_snapshot (has intraday timestamps, written by persistLiveSnapshot)
+            List<UsMarketSnapshotRecord> snaps = marketSnapshotRepository.findLatestBySecurityId(securityId, 1);
+            if (!snaps.isEmpty()) {
+                UsMarketSnapshotRecord snap = snaps.get(0);
+                if (snap.lastPrice() != null && snap.lastPrice().doubleValue() > 0) {
+                    LocalDate snapDate = snap.snapshotTime().atZone(java.time.ZoneOffset.UTC).toLocalDate();
+                    long ageDays = ChronoUnit.DAYS.between(snapDate, LocalDate.now());
+                    if (ageDays <= 30) {
+                        log.warn("[price-fallback] {} stooq unavailable; using market_snapshot price ${} from {} ({}d ago)",
+                                ticker, snap.lastPrice(), snapDate, ageDays);
+                        return new UsStooqClient.UsQuote(ticker, snapDate,
+                                snap.lastPrice().doubleValue(), snap.lastPrice().doubleValue(),
+                                snap.lastPrice().doubleValue(), snap.lastPrice().doubleValue(),
+                                0.0, 0L);
+                    }
+                }
+            }
+
+            // 2. Try market_price_daily (daily OHLCV, written by persistLiveSnapshot)
+            List<UsMarketPriceDailyRecord> rows = marketPriceDailyRepository.findLatestBySecurityId(securityId, 1);
+            if (!rows.isEmpty()) {
+                UsMarketPriceDailyRecord rec = rows.get(0);
+                if (rec.close() != null && rec.close().doubleValue() > 0) {
+                    long ageDays = ChronoUnit.DAYS.between(rec.tradeDate(), LocalDate.now());
+                    if (ageDays <= 30) {
+                        log.warn("[price-fallback] {} stooq unavailable; using market_price_daily ${} from {} ({}d ago)",
+                                ticker, rec.close(), rec.tradeDate(), ageDays);
+                        return new UsStooqClient.UsQuote(ticker, rec.tradeDate(),
+                                rec.close().doubleValue(), rec.close().doubleValue(),
+                                rec.close().doubleValue(), rec.close().doubleValue(),
+                                0.0, 0L);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("[price-fallback] DB quote lookup failed for {}: {}", ticker, e.getMessage());
+        }
+        return null;
     }
 
     public List<StockSnapshot> listSnapshots(List<Market> markets) {

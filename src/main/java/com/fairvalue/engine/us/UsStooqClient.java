@@ -1,5 +1,7 @@
 package com.fairvalue.engine.us;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -14,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class UsStooqClient {
+    private static final Logger log = LoggerFactory.getLogger(UsStooqClient.class);
     private static final DateTimeFormatter STOOQ_DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final RestClient restClient;
@@ -52,17 +55,24 @@ public class UsStooqClient {
                     .uri(uriBuilder -> uriBuilder
                             .path("/q/l/")
                             .queryParam("s", symbol)
-                            .queryParam("i", "d")
                             .build())
                     .retrieve()
                     .body(String.class);
 
             if (csv == null || csv.isBlank()) {
+                log.warn("[stooq] empty response for {}", symbol);
+                return Optional.empty();
+            }
+
+            // Rate-limit detection: Stooq returns HTML/text "Exceeded the daily hits limit"
+            if (csv.contains("Exceeded") || csv.contains("hits limit") || csv.startsWith("<")) {
+                log.warn("[stooq] rate-limited for {} — response: {}", symbol, csv.substring(0, Math.min(80, csv.length())));
                 return Optional.empty();
             }
 
             String[] parts = csv.trim().split(",");
             if (parts.length < 7 || "N/D".equalsIgnoreCase(parts[1])) {
+                log.debug("[stooq] no data (N/D or short response) for {}: {}", symbol, csv.substring(0, Math.min(60, csv.length())));
                 return Optional.empty();
             }
 
@@ -77,7 +87,8 @@ public class UsStooqClient {
                     0.0,
                     parseLong(parts[6 + offset], 0L)
             ));
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("[stooq] fetch failed for {}: {}", ticker, e.getMessage());
             return Optional.empty();
         }
     }
