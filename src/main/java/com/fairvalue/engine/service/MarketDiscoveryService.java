@@ -25,6 +25,7 @@ import com.fairvalue.engine.us.UsPeerUniverseRulesService;
 import com.fairvalue.engine.us.UsSecurityMaster;
 import com.fairvalue.engine.us.UsSecurityMasterService;
 import com.fairvalue.engine.us.UsStoredValuationSnapshotRecord;
+import com.fairvalue.engine.us.UsValuationReadService;
 import com.fairvalue.engine.valuation.ValuationResult;
 import com.fairvalue.engine.valuation.strategy.MathSupport;
 import org.springframework.beans.factory.annotation.Value;
@@ -53,6 +54,7 @@ public class MarketDiscoveryService {
     private final MarketDataService marketDataService;
     private final ValuationService valuationService;
     private final UsEquityValuationService usEquityValuationService;
+    private final UsValuationReadService usValuationReadService;
     private final UsConfiguredValuationModelsService usConfiguredValuationModelsService;
     private final UsPeerUniverseRulesService usPeerUniverseRulesService;
     private final UsSecurityMasterService usSecurityMasterService;
@@ -75,6 +77,7 @@ public class MarketDiscoveryService {
             MarketDataService marketDataService,
             ValuationService valuationService,
             UsEquityValuationService usEquityValuationService,
+            UsValuationReadService usValuationReadService,
             UsConfiguredValuationModelsService usConfiguredValuationModelsService,
             UsPeerUniverseRulesService usPeerUniverseRulesService,
             UsSecurityMasterService usSecurityMasterService,
@@ -86,6 +89,7 @@ public class MarketDiscoveryService {
         this.marketDataService = marketDataService;
         this.valuationService = valuationService;
         this.usEquityValuationService = usEquityValuationService;
+        this.usValuationReadService = usValuationReadService;
         this.usConfiguredValuationModelsService = usConfiguredValuationModelsService;
         this.usPeerUniverseRulesService = usPeerUniverseRulesService;
         this.usSecurityMasterService = usSecurityMasterService;
@@ -185,27 +189,35 @@ public class MarketDiscoveryService {
                 );
             }
 
-            boolean ascending = "overvalued".equals(resolvedRankingType);
-            long qualifiedCount = valuationLatestSnapshotRepository.countQualifiedRankings(Market.US.name());
-            List<MarketRankingItem> pageScopedItems = qualifiedCount > 0
-                    ? valuationLatestSnapshotRepository.findRankings(
-                            Market.US.name(),
-                            ascending,
-                            resolvedSize,
-                            Math.max((resolvedPage - 1) * resolvedSize, 0))
-                    : List.of();
+            Map<String, UsStoredValuationSnapshotRecord> storedByTicker = valuationLatestSnapshotRepository.findAllByMarket(Market.US.name()).stream()
+                    .collect(Collectors.toMap(
+                            snapshot -> normalizeTicker(snapshot.ticker()),
+                            Function.identity(),
+                            (left, right) -> left,
+                            LinkedHashMap::new
+                    ));
+            List<MarketRankingItem> rankedItems = usSecurityMasterService.findActiveUsUniverse().stream()
+                    .map(security -> toUsFallbackRankingItem(
+                            security,
+                            storedByTicker.get(normalizeTicker(security.ticker()))
+                    ))
+                    .filter(Objects::nonNull)
+                    .sorted(rankingComparator(resolvedRankingType))
+                    .toList();
+            int fromIndex = Math.min((resolvedPage - 1) * resolvedSize, rankedItems.size());
+            int toIndex = Math.min(fromIndex + resolvedSize, rankedItems.size());
             return new MarketRankingResponse(
-                market.name(),
-                resolvedRankingType,
-                resolvedPage,
-                resolvedSize,
-                qualifiedCount,
-                "us_latest_snapshot_page_scoped_ranking",
-                generatedAt,
-                coverage.snapshotCount() > 0 ? valuationLatestSnapshotRepository.latestDataAsOf(Market.US.name()) : dataAsOf,
-                "upside_pct",
-                coverage.disclaimer(),
-                pageScopedItems
+                    market.name(),
+                    resolvedRankingType,
+                    resolvedPage,
+                    resolvedSize,
+                    rankedItems.size(),
+                    "us_security_master_cached_global_ranking",
+                    generatedAt,
+                    dataAsOf,
+                    "upside_pct",
+                    "Current US ranking uses a global fallback across stored valuations and cached non-synthetic snapshots until strict tradable coverage is ready.",
+                    rankedItems.subList(fromIndex, toIndex)
             );
         }
 
@@ -279,7 +291,7 @@ public class MarketDiscoveryService {
                 && rankableCoverage >= strictMinCoverageRatio;
         String disclaimer = strictReady
                 ? ""
-                : "Current US ranking excludes research-only or stale snapshots. Until tradable snapshots meet strict coverage and freshness thresholds, ordering remains page-scoped within each loaded page.";
+                : "Current US ranking excludes research-only or stale snapshots. Until tradable snapshots meet strict coverage and freshness thresholds, fallback ordering uses stored valuations plus cached non-synthetic snapshots.";
         return new UsRankingCoverageMetrics(
                 Instant.now(),
                 universeSize,
@@ -293,7 +305,7 @@ public class MarketDiscoveryService {
                 MathSupport.round(rankableCoverage),
                 MathSupport.round(staleRatio),
                 strictReady,
-                strictReady ? "strict_persisted_ranking" : "page_scoped_ranking",
+                strictReady ? "strict_persisted_ranking" : "cached_global_ranking",
                 disclaimer
         );
     }
@@ -316,7 +328,7 @@ public class MarketDiscoveryService {
     private CnDiscoveryItem toUsItem(StockSnapshot snapshot) {
         String ticker = snapshot.symbol();
         StockSnapshot liveSnapshot = marketDataService.getSnapshot(Market.US, ticker);
-        ValuationResult valuation = valuationService.valuate(Market.US, ticker);
+        ValuationResult valuation = usReadValuation(ticker);
         UsEquityProfileResponse profile = usEquityValuationService.profile(ticker);
         UsFinancialQualityResponse quality = usEquityValuationService.financialQuality(ticker);
 
@@ -388,7 +400,7 @@ public class MarketDiscoveryService {
     }
 
     private CnDiscoveryItem toUsListItem(UsSecurityMaster security) {
-        UsStoredValuationSnapshotRecord storedSnapshot = valuationLatestSnapshotRepository.findByTicker(security.ticker()).orElse(null);
+        UsStoredValuationSnapshotRecord storedSnapshot = usValuationReadService.findLatestSnapshot(security.ticker()).orElse(null);
         if (storedSnapshot != null) {
             UsMarketSnapshotRecord latestMarketSnapshot = latestMarketSnapshot(security.ticker(), storedSnapshot);
             UsFinancialDerivedMetricRecord latestDerived = latestDerivedMetrics(security.ticker(), storedSnapshot);
@@ -426,7 +438,7 @@ public class MarketDiscoveryService {
     }
 
     private MarketRankingItem toUsRankingItem(UsSecurityMaster security) {
-        UsStoredValuationSnapshotRecord storedSnapshot = valuationLatestSnapshotRepository.findByTicker(security.ticker()).orElse(null);
+        UsStoredValuationSnapshotRecord storedSnapshot = usValuationReadService.findLatestSnapshot(security.ticker()).orElse(null);
         if (storedSnapshot != null) {
             UsMarketSnapshotRecord latestMarketSnapshot = latestMarketSnapshot(security.ticker(), storedSnapshot);
             UsFinancialDerivedMetricRecord latestDerived = latestDerivedMetrics(security.ticker(), storedSnapshot);
@@ -447,6 +459,7 @@ public class MarketDiscoveryService {
                 ? latestDerived.epsDiluted().doubleValue()
                 : 0.0;
         double dailyChange = 0.0;
+        Double activityMetric = cachedUsActivityMetric(security);
         return new CnDiscoveryItem(
                 security.ticker(),
                 firstNonBlank(security.companyName(), security.ticker()),
@@ -468,7 +481,7 @@ public class MarketDiscoveryService {
                 latestMarketSnapshot == null || latestMarketSnapshot.marketCapVendor() == null ? 0.0 : MathSupport.round(latestMarketSnapshot.marketCapVendor().doubleValue() / 100000000.0),
                 MathSupport.round(growthMetric),
                 MathSupport.round(dailyChange),
-                MathSupport.round(storedSnapshot.confidenceLevel() * 100.0)
+                activityMetric == null ? 0.0 : activityMetric
         );
     }
 
@@ -481,6 +494,7 @@ public class MarketDiscoveryService {
         if (!storedSnapshot.rankable() || storedSnapshot.industryFallbackUsed()) {
             return null;
         }
+        Double activityMetric = cachedUsActivityMetric(security);
         return new MarketRankingItem(
                 security.ticker(),
                 firstNonBlank(security.companyName(), security.ticker()),
@@ -497,7 +511,54 @@ public class MarketDiscoveryService {
                 latestMarketSnapshot == null || latestMarketSnapshot.marketCapVendor() == null ? null : MathSupport.round(latestMarketSnapshot.marketCapVendor().doubleValue()),
                 latestDerived == null || latestDerived.epsDiluted() == null ? null : MathSupport.round(latestDerived.epsDiluted().doubleValue()),
                 null,
-                MathSupport.round(storedSnapshot.confidenceLevel() * 100.0)
+                activityMetric
+        );
+    }
+
+    private MarketRankingItem toUsFallbackRankingItem(
+            UsSecurityMaster security,
+            UsStoredValuationSnapshotRecord storedSnapshot
+    ) {
+        StockSnapshot snapshot = enrichUsSnapshot(
+                security,
+                marketDataService.getCachedOrSyntheticSnapshot(Market.US, security.ticker())
+        );
+        if (storedSnapshot != null) {
+            return toUsStoredFallbackRankingItem(security, storedSnapshot, snapshot);
+        }
+        if (isSyntheticSnapshot(snapshot)) {
+            return null;
+        }
+        return toRankingItem(toUsListItem(snapshot));
+    }
+
+    private MarketRankingItem toUsStoredFallbackRankingItem(
+            UsSecurityMaster security,
+            UsStoredValuationSnapshotRecord storedSnapshot,
+            StockSnapshot snapshot
+    ) {
+        if (!storedSnapshot.rankable() || storedSnapshot.industryFallbackUsed()) {
+            return null;
+        }
+        Double peTtm = isSyntheticSnapshot(snapshot) ? null : MathSupport.round(snapshot.fundamentals().pe());
+        Double growthMetric = isSyntheticSnapshot(snapshot) ? null : MathSupport.round(snapshot.fundamentals().revenueGrowth());
+        return new MarketRankingItem(
+                security.ticker(),
+                firstNonBlank(security.companyName(), security.ticker()),
+                firstNonBlank(security.industry(), firstNonBlank(security.sector(), security.exchange())),
+                MathSupport.round(storedSnapshot.currentPrice()),
+                MathSupport.round(storedSnapshot.fairValueMid()),
+                MathSupport.round(storedSnapshot.fairValueLow()),
+                MathSupport.round(storedSnapshot.fairValueHigh()),
+                MathSupport.round(storedSnapshot.upsidePct()),
+                MathSupport.round(storedSnapshot.confidenceLevel()),
+                normalizeVerdict(storedSnapshot.finalVerdict(), storedSnapshot.upsidePct()),
+                peTtm,
+                null,
+                null,
+                growthMetric,
+                null,
+                cachedUsActivityMetricFromSnapshot(snapshot)
         );
     }
 
@@ -842,7 +903,7 @@ public class MarketDiscoveryService {
             );
         }
 
-        ValuationResult valuation = valuationService.valuate(Market.US, ticker);
+        ValuationResult valuation = usReadValuation(ticker);
         UsEquityProfileResponse profile = usEquityValuationService.profile(ticker);
         UsFinancialQualityResponse quality = usEquityValuationService.financialQuality(ticker);
         StockSnapshot snapshot = marketDataService.getSnapshot(Market.US, ticker);
@@ -967,6 +1028,11 @@ public class MarketDiscoveryService {
                 )),
                 valuation.valuationStatus() == null ? rankingVerdict(valuation.upside()) : valuation.valuationStatus().name()
         );
+    }
+
+    private ValuationResult usReadValuation(String ticker) {
+        return usValuationReadService.findLatestValuationResult(ticker)
+                .orElseGet(() -> valuationService.valuate(Market.US, ticker));
     }
 
     private double genericMarketCapDistance(StockSnapshot target, StockSnapshot candidate) {
@@ -1196,6 +1262,27 @@ public class MarketDiscoveryService {
         return "overvalued".equals(rankingType) ? base : base.reversed();
     }
 
+    private Double cachedUsActivityMetric(UsSecurityMaster security) {
+        StockSnapshot snapshot = enrichUsSnapshot(
+                security,
+                marketDataService.getCachedOrSyntheticSnapshot(Market.US, security.ticker())
+        );
+        return cachedUsActivityMetricFromSnapshot(snapshot);
+    }
+
+    private Double cachedUsActivityMetricFromSnapshot(StockSnapshot snapshot) {
+        if (snapshot == null || isSyntheticSnapshot(snapshot)) {
+            return null;
+        }
+        return MathSupport.round(snapshot.fundamentals().liquidityScore() * 100.0);
+    }
+
+    private boolean isSyntheticSnapshot(StockSnapshot snapshot) {
+        return snapshot != null
+                && snapshot.dataVersion() != null
+                && snapshot.dataVersion().toLowerCase(Locale.ROOT).contains("synthetic");
+    }
+
     private double nullableDouble(Double value) {
         return value == null ? 0.0 : value;
     }
@@ -1258,6 +1345,12 @@ public class MarketDiscoveryService {
             return "轻度高估";
         }
         return "合理";
+    }
+
+    private String normalizeTicker(String rawTicker) {
+        return rawTicker == null
+                ? ""
+                : rawTicker.trim().toUpperCase(Locale.ROOT).replace(".US", "").replace(".", "-");
     }
 
     private String firstNonBlank(String first, String fallback) {

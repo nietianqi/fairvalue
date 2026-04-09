@@ -8,6 +8,7 @@ import com.fairvalue.engine.api.dto.MarketRankingResponse;
 import com.fairvalue.engine.api.dto.ScenarioRequest;
 import com.fairvalue.engine.api.dto.ScreenerRequest;
 import com.fairvalue.engine.api.dto.ScreenerResponse;
+import com.fairvalue.engine.api.dto.ScreenerFilterCatalogResponse;
 import com.fairvalue.engine.api.dto.cn.CnDiscoveryResponse;
 import com.fairvalue.engine.domain.Market;
 import com.fairvalue.engine.service.MarketDiscoveryService;
@@ -83,11 +84,9 @@ public class ValuationController {
 
     @PostMapping("/valuation/batch")
     public BatchValuationResponse batchValuation(@Valid @RequestBody BatchValuationRequest request) {
-        List<ValuationService.MarketSymbol> items = request.items().stream()
-                .map(item -> new ValuationService.MarketSymbol(Market.from(item.market()), item.symbol()))
+        List<ValuationResult> results = request.items().stream()
+                .map(item -> valuationService.valuate(Market.from(item.market()), item.symbol()))
                 .toList();
-
-        List<ValuationResult> results = valuationService.batchValuate(items);
         return new BatchValuationResponse(results.size(), results);
     }
 
@@ -117,11 +116,13 @@ public class ValuationController {
 
     @PostMapping("/screener/valuation")
     public ScreenerResponse screener(@Valid @RequestBody(required = false) ScreenerRequest request) {
-        ScreenerRequest payload = request == null
-                ? new ScreenerRequest(null, null, null, null, null, null, null)
-                : request;
+        ScreenerRequest payload = request == null ? ScreenerRequest.empty() : request;
+        payload.validateRanges();
+        return valuationService.screenerResponse(payload);
+    }
 
-        List<ValuationResult> candidates = valuationService.screener(payload);
-        return new ScreenerResponse(candidates.size(), candidates);
+    @GetMapping("/screener/filters")
+    public ScreenerFilterCatalogResponse screenerFilters() {
+        return valuationService.screenerFilterCatalog();
     }
 }
