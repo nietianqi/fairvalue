@@ -1,0 +1,226 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>机会总览 | 财智发现</title>
+  <link rel="stylesheet" href="/assets/fairvalue-shell.css?v=20260412-shell4" />
+  <link rel="stylesheet" href="/assets/dashboard.css?v=20260412-dashboard7" />
+</head>
+<body class="dashboard-proto-body">
+  <div class="dashboard-proto-shell">
+    <header class="dashboard-topbar">
+      <div class="dashboard-topbar-left">
+        <a class="dashboard-brand" href="/dashboard.html">
+          <span class="dashboard-brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M3 13.5h4l2.1-6 3.2 10 2.6-7H21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+          </span>
+          <span class="dashboard-brand-copy">
+            <strong>财智发现</strong>
+          </span>
+        </a>
+
+        <nav class="dashboard-nav" aria-label="主导航">
+          <a class="dashboard-nav-link is-active" href="/dashboard.html">机会总览</a>
+          <a class="dashboard-nav-link" href="/valuation-screener.html">策略筛选</a>
+          <a class="dashboard-nav-link" href="/user-center.html">自选提醒</a>
+        </nav>
+      </div>
+
+      <div class="dashboard-topbar-right">
+        <form class="dashboard-search" data-global-search>
+          <label class="dashboard-search-field">
+            <svg viewBox="0 0 24 24" fill="none">
+              <circle cx="11" cy="11" r="6.5" stroke-width="1.8"></circle>
+              <path d="M16 16l4 4" stroke-width="1.8" stroke-linecap="round"></path>
+            </svg>
+            <input name="q" type="search" placeholder="搜索股票代码/简称" />
+          </label>
+        </form>
+
+        <button class="dashboard-notice-btn" type="button" aria-label="通知中心">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M15 17H5l1.3-1.6a2 2 0 0 0 .45-1.26V10a5.2 5.2 0 1 1 10.4 0v4.14c0 .46.16.91.45 1.26L19 17h-4Z" stroke-width="1.8" stroke-linejoin="round"></path>
+            <path d="M9.5 19a2.5 2.5 0 0 0 5 0" stroke-width="1.8" stroke-linecap="round"></path>
+          </svg>
+          <span class="dashboard-notice-dot" aria-hidden="true"></span>
+        </button>
+
+        <div class="dashboard-member-card">
+          <div class="dashboard-member-copy">
+            <strong id="dashboardPlanPill">专业版会员</strong>
+            <span>有效期至 2025-12-31</span>
+          </div>
+          <span class="dashboard-member-avatar" aria-hidden="true">FV</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="dashboard-proto-main">
+      <div class="dashboard-workbench">
+        <aside class="dashboard-left-rail">
+          <section class="dashboard-side-card dashboard-side-nav-card">
+            <div class="dashboard-side-label">快捷监控</div>
+            <nav class="dashboard-side-nav">
+              <a class="dashboard-side-link is-active" href="#dashboardGrid">机会总览</a>
+              <a class="dashboard-side-link" href="/user-center.html">持仓表现</a>
+              <a class="dashboard-side-link" href="/valuation-screener.html">独家策略库</a>
+            </nav>
+          </section>
+
+          <section class="dashboard-side-card dashboard-side-upgrade">
+            <div class="dashboard-side-label">升级至尊版</div>
+            <strong>解锁 AI 深度解读与更多提醒权限</strong>
+            <p>首页负责发现机会，升级后可以在详情页、自选和提醒中心拿到更完整的解释与工作区能力。</p>
+            <a class="app-primary-btn" href="/membership-pricing.html">立即升级</a>
+          </section>
+
+          <section class="dashboard-side-card dashboard-side-foot">
+            <div class="dashboard-side-label">账户设置</div>
+            <a class="dashboard-side-link" href="/user-center.html">进入工作区</a>
+            <small>所有从首页触发的自选、提醒和继续查看动作，都会回流到当前工作区。</small>
+          </section>
+        </aside>
+
+        <section class="dashboard-stage">
+          <section class="dashboard-header app-panel">
+            <div class="dashboard-header-main">
+              <div class="dashboard-header-copy">
+                <span class="section-kicker">Today Opportunity Desk</span>
+                <h1>今日机会总览</h1>
+                <p>先看今天最值得点开的低估与共振标的，再决定是否进入详情、自选和提醒。</p>
+              </div>
+              <div class="dashboard-header-actions">
+                <div class="dashboard-market-tabs" id="dashboardMarketTabs"></div>
+                <div class="dashboard-toolbar-row">
+                  <a class="toolbar-pill" href="/valuation-screener.html">策略筛选</a>
+                  <button class="toolbar-pill" type="button">2026-04-12 (今日)</button>
+                  <button class="toolbar-pill is-primary" id="refreshDashboardBtn" type="button">刷新机会</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="dashboard-summary-inline">
+              <div class="dashboard-summary-headline">
+                <strong id="heroSummaryTitle">正在汇总机会...</strong>
+                <span id="heroSummaryFoot">正在读取榜单覆盖、候选池与工作区状态。</span>
+              </div>
+              <div class="dashboard-summary-grid" id="heroSummaryGrid">
+                <div class="summary-skeleton"></div>
+                <div class="summary-skeleton"></div>
+                <div class="summary-skeleton"></div>
+                <div class="summary-skeleton"></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="dashboard-disclaimer" id="dashboardDisclaimer"></section>
+
+          <section class="dashboard-grid" id="dashboardGrid">
+            <article class="app-panel dashboard-panel dashboard-panel-list">
+              <div class="dashboard-panel-head">
+                <div>
+                  <span class="section-kicker">Low Valuation</span>
+                  <h2>今日低估榜</h2>
+                </div>
+                <a class="subtle-link" href="/cn-undervalued-stocks.html">查看更多</a>
+              </div>
+              <div class="opportunity-list" id="todayOpportunityList"></div>
+            </article>
+
+            <article class="app-panel dashboard-panel dashboard-panel-list">
+              <div class="dashboard-panel-head">
+                <div>
+                  <span class="section-kicker">Dual Factor</span>
+                  <h2>双因子共振</h2>
+                </div>
+                <span class="mini-tag">估值修复 + 趋势反转</span>
+              </div>
+              <div class="opportunity-list" id="resonanceList"></div>
+            </article>
+
+            <aside class="dashboard-right-stack">
+              <article class="app-panel dashboard-side-panel dashboard-trend-panel">
+                <div class="dashboard-panel-head">
+                  <div>
+                    <span class="section-kicker">Trend Monitor</span>
+                    <h2>今日右侧趋势榜</h2>
+                  </div>
+                  <span class="side-beta-tag">Beta</span>
+                </div>
+                <div class="opportunity-list opportunity-list--tight" id="trendCandidateList"></div>
+              </article>
+
+              <article class="app-panel dashboard-side-panel dashboard-insight-panel">
+                <div class="dashboard-panel-head">
+                  <div>
+                    <span class="section-kicker">今日趋势研判</span>
+                    <h2>趋势与工作区回流</h2>
+                  </div>
+                </div>
+                <div class="conversion-flow-list" id="dashboardFlowSummary"></div>
+              </article>
+            </aside>
+
+            <article class="app-panel dashboard-panel dashboard-panel-list">
+              <div class="dashboard-panel-head">
+                <div>
+                  <span class="section-kicker">Event Proxy</span>
+                  <h2>重大事件驱动</h2>
+                </div>
+                <span class="mini-tag mini-tag-warn">MVP</span>
+              </div>
+              <div class="opportunity-list" id="eventRadarList"></div>
+            </article>
+
+            <article class="app-panel dashboard-panel dashboard-panel-list">
+              <div class="dashboard-panel-head">
+                <div>
+                  <span class="section-kicker">My Watchlist</span>
+                  <h2>我的自选异动流</h2>
+                </div>
+                <a class="subtle-link" href="/user-center.html">管理我的自选</a>
+              </div>
+              <div class="watchlist-pulse" id="watchlistPulse"></div>
+            </article>
+          </section>
+
+          <section class="dashboard-upgrade-strip app-panel">
+            <div class="dashboard-upgrade-copy">
+              <span class="section-kicker">升级至至尊版</span>
+              <strong>拿到更完整的深度解释、更多提醒模板与更强工作区能力。</strong>
+              <p>首页继续负责发现机会，升级后可以把这些机会更顺地带进详情、自选与提醒中心。</p>
+            </div>
+            <div class="dashboard-insight-list" id="dashboardActionGrid"></div>
+          </section>
+
+          <section class="dashboard-sector-strip app-panel">
+            <div class="dashboard-panel-head">
+              <div>
+                <span class="section-kicker">Sector Heat</span>
+                <h2>行业热度透视</h2>
+              </div>
+            </div>
+            <div class="sector-heat-list" id="sectorHeatList"></div>
+          </section>
+
+          <footer class="fv-page-footer">
+            <div>© 2024 财智发现. All Rights Reserved. 服务协议 · 隐私政策 · 风险提示</div>
+            <div class="fv-page-footer-meta">
+              <span class="fv-status-dot" aria-hidden="true"></span>
+              <span>数据实时已连接，Market Close: 15:00:00 (CST)</span>
+            </div>
+          </footer>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="/assets/fairvalue-shell.js?v=20260412-shell4" defer></script>
+  <script src="/assets/platform-client.js?v=20260411-platform" defer></script>
+  <script src="/assets/fairvalue-tracker.js?v=20260412-tracker3" defer></script>
+  <script src="/assets/dashboard.js?v=20260412-dashboard7" defer></script>
+</body>
+</html>
